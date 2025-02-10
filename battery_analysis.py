@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 # import re
 
-base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+# base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
 
 def detect_date_format(date_series):
     for fmt in ["%Y-%m-%d %H:%M:%S.%f",'%d/%m/%Y %H:%M','%m/%d/%Y %H:%M']:
@@ -70,7 +70,8 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
         # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
         timestamp = datetime.now().strftime("%H%M%S")
         filename = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}_{timestamp}.png"  # Add timestamp to filename
-        path_save = os.path.join(base_dir, filename)
+        # path_save = os.path.join(base_dir, filename)
+        path_save = filename
     
     order = ['Critical','Low','Medium','High']
     palette = {
