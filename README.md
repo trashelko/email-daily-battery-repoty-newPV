@@ -9,7 +9,7 @@ All files:
 
 * battery_analysis.py
   * functions which clean and set up correctly the data
-  * function which creates the chart
+  * function which creates the snapshot_chart
   
 * battery_status_today_report.py
   * fuctions which run queries (test and real)
