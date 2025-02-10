@@ -6,6 +6,8 @@ from datetime import datetime
 import os
 # import re
 
+base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+
 def detect_date_format(date_series):
     for fmt in ["%Y-%m-%d %H:%M:%S.%f",'%d/%m/%Y %H:%M','%m/%d/%Y %H:%M']:
         try:
@@ -65,9 +67,9 @@ def is_6000(ID):
 def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_name='', path_save = None):
 
     if path_save is None:
-        base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report/latest_batt_reports/charts"
+        # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
         timestamp = datetime.now().strftime("%H%M%S")
-        filename = f"snapshot_{report_date.replace(' ', '')}_{timestamp}.png"  # Add timestamp to filename
+        filename = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}_{timestamp}.png"  # Add timestamp to filename
         path_save = os.path.join(base_dir, filename)
     
     order = ['Critical','Low','Medium','High']

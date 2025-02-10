@@ -8,6 +8,8 @@ from datetime import datetime
 import time
 import os
 
+base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+
 conn = pyodbc.connect(
         f'DRIVER={{ODBC Driver 17 for SQL Server}};'
         f'SERVER={DB_CONFIG["server"]};'
@@ -95,7 +97,8 @@ def filter_df_for_newPV(latest_batt):
     df = latest_batt
 
     # Import list of new panel IDs
-    path_newPV_mila = '/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/data/newPV/ZIM-New Panel (Mila).csv'
+    csv_filename = f"ZIM-New Panel (Mila).csv"
+    path_newPV_mila = os.path.join(base_dir, csv_filename)
     newPV_mila = pd.read_csv(path_newPV_mila)
     IDs_newPV_mila = list(newPV_mila['DeviceID'])
 
@@ -120,8 +123,8 @@ def get_LOW_latest_batt(latest_batt):
 def generate_battery_snapshot_report():
 
     report_date = pd.Timestamp.today().strftime('%-d %b')
-    base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report/latest_batt_reports"
-    csv_filename = f"latest_batt_{report_date.replace(' ', '')}.csv"
+    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+    csv_filename = f"latest_batt_reports/latest_batt_{report_date.replace(' ', '')}.csv"
     path_csv = os.path.join(base_dir, csv_filename)
 
     if os.path.exists(path_csv):
@@ -132,14 +135,14 @@ def generate_battery_snapshot_report():
         save_df_with_metadata(latest_batt, query_time, path_csv)
     
     IDs_newPV = filter_df_for_newPV(latest_batt)
-    base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report/latest_batt_reports/charts"
-    filename = f"snapshot_{report_date.replace(' ', '')}.png"
+    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+    filename = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
     path_save_chart = os.path.join(base_dir, filename)
     create_snapshot_chart(latest_batt, IDs_newPV, report_date, paired=True, list_name="NewPV & 6000+ Series", path_save = path_save_chart)
     
 def test_main():
-    base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report/latest_batt_reports"
-    csv_filename = "latest_batt_reports/test_report.csv"
+    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+    csv_filename = "latest_batt_reports/latest_batt_reports/test_report.csv"
     path_csv = os.path.join(base_dir, csv_filename)
 
     if os.path.exists(path_csv):
