@@ -1,0 +1,9 @@
+# Mac files
+.DS_Store
+
+# Sensitive data
+credentials.py
+
+# Python specific
+__pycache__/
+venv/
