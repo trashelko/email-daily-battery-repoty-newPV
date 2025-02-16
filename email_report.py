@@ -13,11 +13,8 @@ def email_report():
     generate_battery_snapshot_report()
 
     report_date = pd.Timestamp.today().strftime('%-d %b')
-    base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report/latest_batt_reports"
-    snapshot_filename = f"charts/snapshot_{report_date.replace(' ', '')}.png" 
-    csv_filename = f"latest_batt_{report_date.replace(' ', '')}.csv"
-    path_save_chart = os.path.join(base_dir, snapshot_filename)
-    path_csv = os.path.join(base_dir, csv_filename)
+    path_save_chart = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
+    path_csv = f"latest_batt_reports/latest_batt_{report_date.replace(' ', '')}.csv"
 
     latest_batt, query_time = read_df_with_metadata(path_csv)
     latest_batt_LOW = get_LOW_latest_batt(latest_batt)
