@@ -2,7 +2,6 @@ from credentials import EMAIL_CONFIG
 from battery_status_today_report import (generate_battery_snapshot_report,read_df_with_metadata,get_LOW_latest_batt)
 
 import pandas as pd
-import seaborn as sns
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
