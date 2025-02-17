@@ -35,7 +35,7 @@ def email_weekly_report():
     
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
-    email['To'] = EMAIL_CONFIG['recipient']
+    email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
     email['Subject'] = "Last Several Battery Reports of ZIM's New PV Trackers"
 
     html_content = """

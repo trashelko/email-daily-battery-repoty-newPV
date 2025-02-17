@@ -22,7 +22,7 @@ def email_report():
     
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
-    email['To'] = EMAIL_CONFIG['recipient']
+    email['To'] = EMAIL_CONFIG['recipients'][0]
     email['Subject'] = "Daily Battery Report of ZIM's New PV Trackers"
 
     # Add image
