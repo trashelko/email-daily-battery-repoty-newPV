@@ -2,9 +2,9 @@ from battery_analysis import (is_6000,create_snapshot_chart,get_ready_latest_bat
 from credentials import DB_CONFIG
 
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import pyodbc
-from datetime import datetime
+# from datetime import datetime
 import time
 import os
 
