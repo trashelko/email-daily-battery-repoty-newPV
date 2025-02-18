@@ -8,5 +8,5 @@ DB_CONFIG = {
 EMAIL_CONFIG = {
     'sender': '<sender-email>',
     'password': '<sender-password>',
-    'recipient': '<recipient-email>',
+    'recipients': '[<recipient1-email>, <recipient2-email>]',
 }
