@@ -91,7 +91,11 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     
     
     plt.figure(figsize=(4, 6))
-    ax = sns.countplot(data=df, x='PowerMode', hue='PowerMode', order=order, palette=palette, legend=False)
+    ax = sns.countplot(data=df, x='PowerMode', hue='PowerMode', order=order, palette=palette)
+    try:
+        ax.get_legend().remove()
+    except:
+        pass  # No legend to remove
     
     for p in ax.patches:
         height = p.get_height()

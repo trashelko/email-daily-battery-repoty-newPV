@@ -1,12 +1,14 @@
 from battery_analysis import (is_6000,create_snapshot_chart,get_ready_latest_batt)
 from credentials import DB_CONFIG
+from utils import prompt_for_date
 
 import pandas as pd
 # import matplotlib.pyplot as plt
 import pyodbc
-# from datetime import datetime
+from datetime import datetime
 import time
 import os
+import sys
 
 # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
 
@@ -39,34 +41,72 @@ def get_test_query():
 
     return test_df, query_time
 
-def get_latest_batt():
-
-    query_latest_batt = """
-    WITH LatestBursts AS (
-        SELECT
-            [DeviceID],
-            [DeviceName],
-            [EventTimeUTC],
-            [PayloadData],
-            ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
-        FROM [dbo].[Bursts]
-        WHERE
-            CustomerName = 'Zim'
-            AND FPort = 1
-            AND DeviceID LIKE 'A0%'
-            AND PayloadData LIKE '%Battery Level%'
-            AND PayloadData NOT LIKE '%Battery Level 0%'
-            -- AND DeviceID != DeviceName
-    )
-    SELECT
-        [DeviceID],
-        [DeviceName],
-        [EventTimeUTC],
-        [PayloadData]
-    FROM LatestBursts
-    WHERE rn = 1
-    ORDER BY [EventTimeUTC] DESC;
+def get_latest_batt(specific_date=None):
     """
+    Get the latest battery status.
+    """
+    if specific_date is None:
+        # Get the most recent data up to now, looking back 4 months
+        query_latest_batt = """
+            WITH LatestBursts AS (
+                SELECT
+                    [DeviceID],
+                    [DeviceName],
+                    [EventTimeUTC],
+                    [PayloadData],
+                    ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
+                FROM [dbo].[Bursts]
+                WHERE
+                    CustomerName = 'Zim'
+                    AND FPort = 1
+                    AND DeviceID LIKE 'A0%'
+                    AND PayloadData LIKE '%Battery Level%'
+                    AND PayloadData NOT LIKE '%Battery Level 0%'
+                    AND EventTimeUTC >= DATEADD(MONTH, -4, GETUTCDATE())
+            )
+            SELECT
+                [DeviceID],
+                [DeviceName],
+                [EventTimeUTC],
+                [PayloadData]
+            FROM LatestBursts
+            WHERE rn = 1
+            ORDER BY [EventTimeUTC] DESC;
+            """
+    else:
+        # Convert specific_date to datetime object for noon
+        date_obj = datetime.strptime(specific_date, "%Y-%m-%d")
+        noon_datetime = date_obj.replace(hour=12, minute=0, second=0)
+        target_datetime = noon_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get the latest data for each device up to noon on the specified date, looking back 4 months
+        query_latest_batt = f"""
+            WITH LatestBursts AS (
+                SELECT
+                    [DeviceID],
+                    [DeviceName],
+                    [EventTimeUTC],
+                    [PayloadData],
+                    ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
+                FROM [dbo].[Bursts]
+                WHERE
+                    CustomerName = 'Zim'
+                    AND FPort = 1
+                    AND DeviceID LIKE 'A0%'
+                    AND PayloadData LIKE '%Battery Level%'
+                    AND PayloadData NOT LIKE '%Battery Level 0%'
+                    AND EventTimeUTC <= '{target_datetime}'
+                    AND EventTimeUTC >= DATEADD(MONTH, -4, CAST('{specific_date}' AS DATETIME))
+            )
+            SELECT
+                [DeviceID],
+                [DeviceName],
+                [EventTimeUTC],
+                [PayloadData]
+            FROM LatestBursts
+            WHERE rn = 1
+            ORDER BY [EventTimeUTC] DESC;
+            """
     
     start_time = time.time()
     latest_batt = pd.read_sql(query_latest_batt, conn)
@@ -121,33 +161,50 @@ def get_LOW_latest_batt(latest_batt):
 
     return latest_batt_LOW
 
-def generate_battery_snapshot_report():
+def generate_battery_snapshot_report(manual_mode=False, specific_date=None):
+    
+    if manual_mode and specific_date is None:
+        specific_date = prompt_for_date()
 
-    report_date = pd.Timestamp.today().strftime('%-d %b')
-    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
+    if specific_date:
+        date_obj = pd.to_datetime(specific_date, format="%Y-%m-%d")
+        report_date = date_obj.strftime('%-d %b')
+    else:
+        report_date = pd.Timestamp.today().strftime('%-d %b')
+    
     csv_filename = f"latest_batt_reports/latest_batt_{report_date.replace(' ', '')}.csv"
-    # path_csv = os.path.join(base_dir, csv_filename)
     path_csv = csv_filename
 
+    # Check if we already have a report for this date
     if os.path.exists(path_csv):
-        latest_batt, _ = read_df_with_metadata(path_csv) 
+        print(f"Loading existing report for {report_date}")
+        latest_batt, _ = read_df_with_metadata(path_csv)
     else:
-        latest_batt, query_time = get_latest_batt()
+        print(f"Generating new report for {report_date}")
+        latest_batt, query_time = get_latest_batt(specific_date)
         latest_batt = get_ready_latest_batt(latest_batt)
         save_df_with_metadata(latest_batt, query_time, path_csv)
     
     IDs_newPV = filter_df_for_newPV(latest_batt)
-    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
-    filename = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
-    # path_save_chart = os.path.join(base_dir, filename)
-    path_save_chart = filename
+    path_save_chart = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
     create_snapshot_chart(latest_batt, IDs_newPV, report_date, paired=True, list_name="NewPV & 6000+ Series", path_save = path_save_chart)
-    
+
+    return report_date
+
+
+if __name__ == "__main__":
+    # Check if --manual flag is present
+    manual_mode = "--manual" in sys.argv
+    generate_battery_snapshot_report(manual_mode)
+
+
+
+
+
+# OLD VERSIONS
+
 def test_main():
-    # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
-    csv_filename = "latest_batt_reports/latest_batt_reports/test_report.csv"
-    # path_csv = os.path.join(base_dir, csv_filename)
-    path_csv = csv_filename
+    path_csv = "latest_batt_reports/latest_batt_reports/test_report.csv"
 
     if os.path.exists(path_csv):
         test_df, query_time = read_df_with_metadata(path_csv)
@@ -156,6 +213,65 @@ def test_main():
         test_df, query_time = get_test_query()
         save_df_with_metadata(test_df, query_time, path_csv)
 
+def get_latest_batt_old():
 
-if __name__ == "__main__":
-   generate_battery_snapshot_report()
+    query_latest_batt_old = """
+        WITH LatestBursts AS (
+            SELECT
+                [DeviceID],
+                [DeviceName],
+                [EventTimeUTC],
+                [PayloadData],
+                ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
+            FROM [dbo].[Bursts]
+            WHERE
+                CustomerName = 'Zim'
+                AND FPort = 1
+                AND DeviceID LIKE 'A0%'
+                AND PayloadData LIKE '%Battery Level%'
+                AND PayloadData NOT LIKE '%Battery Level 0%'
+                -- AND DeviceID != DeviceName
+        )
+        SELECT
+            [DeviceID],
+            [DeviceName],
+            [EventTimeUTC],
+            [PayloadData]
+        FROM LatestBursts
+        WHERE rn = 1
+        ORDER BY [EventTimeUTC] DESC;
+        """
+
+    query_latest_batt = """
+        WITH LatestBursts AS (
+            SELECT
+                [DeviceID],
+                [DeviceName],
+                [EventTimeUTC],
+                [PayloadData],
+                ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
+            FROM [dbo].[Bursts]
+            WHERE
+                CustomerName = 'Zim'
+                AND FPort = 1
+                AND DeviceID LIKE 'A0%'
+                AND PayloadData LIKE '%Battery Level%'
+                AND PayloadData NOT LIKE '%Battery Level 0%'
+                AND EventTimeUTC >= DATEADD(MONTH, -4, GETUTCDATE())
+        )
+        SELECT
+            [DeviceID],
+            [DeviceName],
+            [EventTimeUTC],
+            [PayloadData]
+        FROM LatestBursts
+        WHERE rn = 1
+        ORDER BY [EventTimeUTC] DESC;
+        """
+    
+    start_time = time.time()
+    latest_batt = pd.read_sql(query_latest_batt, conn)
+    conn.close()
+    query_time = time.time() - start_time
+    
+    return latest_batt, query_time

@@ -1,16 +1,25 @@
 from credentials import EMAIL_CONFIG
 from battery_status_today_report import (generate_battery_snapshot_report,read_df_with_metadata,get_LOW_latest_batt)
+from utils import prompt_for_date
 
 import pandas as pd
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import smtplib
+import sys
 
-def email_report():
-    generate_battery_snapshot_report()
+def email_report(manual_mode=False):
+    specific_date = None
+    if manual_mode:
+        specific_date = prompt_for_date()
+    #     date_obj = pd.to_datetime(specific_date, format="%Y-%m-%d")
+    #     report_date = date_obj.strftime('%-d %b')
+    # else:
+    #     report_date = pd.Timestamp.today().strftime('%-d %b')
 
-    report_date = pd.Timestamp.today().strftime('%-d %b')
+    report_date = generate_battery_snapshot_report(manual_mode, specific_date)
+    
     path_save_chart = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
     path_csv = f"latest_batt_reports/latest_batt_{report_date.replace(' ', '')}.csv"
 
@@ -23,7 +32,7 @@ def email_report():
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
     email['To'] = EMAIL_CONFIG['recipients'][0]
-    email['Subject'] = "Daily Battery Report of ZIM's New PV Trackers"
+    email['Subject'] = f"Daily Battery Report of ZIM's New PV Trackers"
 
     # Add image
     with open(path_save_chart, 'rb') as f:
@@ -51,4 +60,5 @@ def email_report():
         server.send_message(email)
 
 if __name__ == "__main__":
-   email_report()
+   manual_mode = "--manual" in sys.argv
+   email_report(manual_mode)
