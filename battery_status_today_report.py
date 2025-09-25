@@ -12,7 +12,8 @@ import sys
 
 # base_dir = "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report"
 
-conn = pyodbc.connect(
+def get_db_connection():
+    return pyodbc.connect(
         f'DRIVER={{ODBC Driver 17 for SQL Server}};'
         f'SERVER={DB_CONFIG["server"]};'
         f'DATABASE={DB_CONFIG["database"]};'
@@ -45,6 +46,9 @@ def get_latest_batt(specific_date=None):
     """
     Get the latest battery status.
     """
+
+    conn = get_db_connection()
+
     if specific_date is None:
         # Get the most recent data up to now, looking back 4 months
         query_latest_batt = """
