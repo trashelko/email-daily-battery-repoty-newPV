@@ -1,4 +1,4 @@
-from credentials import EMAIL_CONFIG
+from database.credentials import EMAIL_CONFIG
 from battery_status_today_report import (read_df_with_metadata,get_LOW_latest_batt)
 
 import pandas as pd

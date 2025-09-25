@@ -1,17 +1,13 @@
 import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from credentials import EMAIL_CONFIG
+from database.credentials import EMAIL_CONFIG
 
-msg = MIMEMultipart()
-msg['From'] = EMAIL_CONFIG['sender']
-msg['To'] = EMAIL_CONFIG['recipient']
-msg['Subject'] = "Test Email"
+sender = EMAIL_CONFIG['sender']
+app_password = EMAIL_CONFIG['password']
 
-body = "Hi, this is a test email."
-msg.attach(MIMEText(body, 'plain'))
-
-with smtplib.SMTP('smtp.gmail.com', 587) as server:
-    server.starttls()
-    server.login(EMAIL_CONFIG['sender'], EMAIL_CONFIG['password'])
-    server.send_message(msg)
+try:
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender, app_password)
+    print("✅ Login successful")
+except Exception as e:
+    print("❌ Login failed:", e)

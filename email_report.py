@@ -1,4 +1,4 @@
-from credentials import EMAIL_CONFIG
+from database.credentials import EMAIL_CONFIG
 from battery_status_today_report import (generate_battery_snapshot_report,read_df_with_metadata,get_LOW_latest_batt)
 from utils import prompt_for_date
 

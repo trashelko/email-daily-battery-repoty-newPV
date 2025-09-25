@@ -1,4 +1,4 @@
-DB_CONFIG = {
+DB_DebugSMBs_CONFIG = {
     'server': '<database-server>',
     'database': '<database-name>',
     'username': '<database-user>',

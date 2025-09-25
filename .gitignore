@@ -7,3 +7,6 @@ credentials.py
 # Python specific
 __pycache__/
 venv/
+
+# Reports
+latest_batt_reports/
