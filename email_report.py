@@ -1,5 +1,7 @@
 from database.credentials import EMAIL_CONFIG
-from battery_status_today_report import (generate_battery_snapshot_report,read_df_with_metadata,get_LOW_latest_batt)
+from reports.daily_report import generate_battery_snapshot_report
+from data_processing.file_operations import read_df_with_metadata
+from data_processing.data_filters import get_LOW_latest_batt
 from utils import prompt_for_date
 
 import pandas as pd
