@@ -49,7 +49,7 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     
     # Email content
     msg = f"Query took {int(query_time)} seconds"
-    query_type = "Original Query" if use_old_query else "Optimized Query"
+    query_type = "DebugSMBs Database" if use_old_query else "SMBs Database"
     
     # Create email
     email = MIMEMultipart()
@@ -98,17 +98,21 @@ if __name__ == "__main__":
     use_old_query = "--old" in sys.argv
     
     if "--help" in sys.argv or "-h" in sys.argv:
-        print("Usage: python email/daily.py [options]")
+        print("Usage: python emailing/daily.py [options]")
         print("Options:")
         print("  --manual    Prompt for specific date")
-        print("  --old       Use original query implementation")
+        print("  --old       Use DebugSMBs database (current implementation)")
         print("  --help, -h  Show this help message")
         print()
         print("Examples:")
-        print("  python email/daily.py                    # Latest data, optimized query")
-        print("  python email/daily.py --old              # Latest data, original query")
-        print("  python email/daily.py --manual           # Specific date, optimized query")
-        print("  python email/daily.py --manual --old     # Specific date, original query")
+        print("  python emailing/daily.py                    # Latest data, DebugSMBs database")
+        print("  python emailing/daily.py --old              # Latest data, DebugSMBs database")
+        print("  python emailing/daily.py --manual           # Specific date, DebugSMBs database")
+        print("  python emailing/daily.py --manual --old     # Specific date, DebugSMBs database")
+        print()
+        print("Note: Currently only DebugSMBs database is implemented.")
+        print("      SMBs database implementation coming soon.")
         sys.exit(0)
     
-    email_daily_report(manual_mode, use_old_query)
+    # For now, always use old query since new SMBs implementation is not ready
+    email_daily_report(manual_mode, True)

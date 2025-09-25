@@ -44,13 +44,13 @@ def generate_battery_snapshot_report(manual_mode=False, use_old_query=False, spe
     else:
         # Choose query implementation based on flag
         if use_old_query:
-            print(f"Generating new report for {report_date} using original query")
+            print(f"Generating new report for {report_date} using DebugSMBs database")
             latest_batt, query_time = get_latest_batt(specific_date)
             latest_batt = get_ready_latest_batt(latest_batt)
         else:
-            print(f"Generating new report for {report_date} using optimized query")
-            latest_batt, query_time = get_latest_voltage(specific_date)
-            # Note: get_latest_voltage returns different data structure, may need processing
+            print(f"Generating new report for {report_date} using SMBs database (not implemented yet)")
+            # TODO: Implement SMBs database query
+            raise NotImplementedError("SMBs database implementation not ready yet")
         
         save_df_with_metadata(latest_batt, query_time, path_csv)
     

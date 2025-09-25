@@ -2,21 +2,27 @@ import pandas as pd
 import pyodbc
 import time
 from datetime import datetime
-from .credentials import DB_DebugSMBs_CONFIG
+from .credentials import DB_DebugSMBs_CONFIG, DB_SMBs_CONFIG
 
-def get_db_connection():
+def get_db_connection(config=None):
     """
     Create and return a database connection.
+    
+    Args:
+        config (dict, optional): Database configuration. If None, uses DebugSMBs_CONFIG.
     
     Returns:
         pyodbc.Connection: Database connection object
     """
+    if config is None:
+        config = DB_DebugSMBs_CONFIG
+    
     return pyodbc.connect(
         f'DRIVER={{ODBC Driver 17 for SQL Server}};'
-        f'SERVER={DB_DebugSMBs_CONFIG["server"]};'
-        f'DATABASE={DB_DebugSMBs_CONFIG["database"]};'
-        f'UID={DB_DebugSMBs_CONFIG["username"]};'
-        f'PWD={DB_DebugSMBs_CONFIG["password"]};'
+        f'SERVER={config["server"]};'
+        f'DATABASE={config["database"]};'
+        f'UID={config["username"]};'
+        f'PWD={config["password"]};'
         'Encrypt=yes;'
         'TrustServerCertificate=yes;'
     )
@@ -131,8 +137,8 @@ def get_latest_batt(specific_date=None):
 
 def get_latest_voltage(specific_date=None):
     """
-    NEW OPTIMIZED QUERY: Get latest battery voltage data using optimized query.
-    This is the new fast implementation using BatteryInfo table.
+    SMBs DATABASE QUERY: Get latest battery voltage data from SMBs database.
+    This will be the new implementation using SMBs database and BatteryInfo table.
     
     Args:
         specific_date (str, optional): Date in 'YYYY-MM-DD' format. If None, gets latest data.
@@ -140,7 +146,7 @@ def get_latest_voltage(specific_date=None):
     Returns:
         tuple: (DataFrame, query_time_seconds)
     """
-    conn = get_db_connection()
+    conn = get_db_connection(DB_SMBs_CONFIG)
     
     # Build date filter if specific_date is provided
     date_filter = ""
