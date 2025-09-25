@@ -3,7 +3,7 @@ Data filtering functions for processing of battery data.
 """
 
 import pandas as pd
-from battery_analysis import is_6000
+from .parsing import is_6000
 
 def filter_df_for_newPV(latest_batt):
     """

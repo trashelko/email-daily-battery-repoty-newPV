@@ -1,28 +1,28 @@
-from database.credentials import EMAIL_CONFIG
-from data_processing.file_operations import read_df_with_metadata
-from data_processing.data_filters import get_LOW_latest_batt
+"""
+Weekly battery report email functionality.
+"""
 
+import os
 import pandas as pd
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import smtplib
+
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def get_emailed_dates():
-    path_emailed_dates = "emailed_dates.txt"
-    with open(path_emailed_dates, 'r') as f:
-        dates = f.read().splitlines()
-    return sorted(dates, key=lambda x: datetime.strptime(x, "%d%b"))
-
-def update_emailed_dates(new_dates):
-    path_emailed_dates = "emailed_dates.txt"
-    with open(path_emailed_dates, 'a') as f:
-        for date in new_dates:
-            f.write(date + '\n')
+from database.credentials import EMAIL_CONFIG
+from data_processing.file_operations import read_df_with_metadata
+from data_processing.data_filters import get_LOW_latest_batt
+from emailing.tracking import get_emailed_dates, update_emailed_dates
 
 def email_weekly_report():
+    """
+    Send weekly report with all new reports that haven't been emailed yet.
+    """
     files = [f for f in os.listdir("latest_batt_reports") if f.startswith("latest_batt_") and f.endswith(".csv")]
     report_dates = [f.replace("latest_batt_", "").replace(".csv", "") for f in files]
     report_dates = sorted(report_dates, key=lambda x: datetime.strptime(x, "%d%b"))

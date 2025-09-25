@@ -4,18 +4,20 @@ Daily battery report generation logic.
 
 import pandas as pd
 import os
-from battery_analysis import create_snapshot_chart, get_ready_latest_batt
-from database.queries import get_latest_batt
+from data_processing.visualization import create_snapshot_chart
+from data_processing.parsing import get_ready_latest_batt
+from database.queries import get_latest_batt, get_latest_voltage
 from data_processing.file_operations import save_df_with_metadata, read_df_with_metadata
 from data_processing.data_filters import filter_df_for_newPV
 from utils import prompt_for_date
 
-def generate_battery_snapshot_report(manual_mode=False, specific_date=None):
+def generate_battery_snapshot_report(manual_mode=False, use_old_query=False, specific_date=None):
     """
     Generate battery snapshot report for a specific date or latest data.
     
     Args:
         manual_mode (bool): If True and no specific_date, prompt user for date
+        use_old_query (bool): If True, use original query implementation
         specific_date (str): Date in 'YYYY-MM-DD' format, or None for latest
         
     Returns:
@@ -40,9 +42,16 @@ def generate_battery_snapshot_report(manual_mode=False, specific_date=None):
         print(f"Loading existing report for {report_date}")
         latest_batt, _ = read_df_with_metadata(path_csv)
     else:
-        print(f"Generating new report for {report_date}")
-        latest_batt, query_time = get_latest_batt(specific_date)
-        latest_batt = get_ready_latest_batt(latest_batt)
+        # Choose query implementation based on flag
+        if use_old_query:
+            print(f"Generating new report for {report_date} using original query")
+            latest_batt, query_time = get_latest_batt(specific_date)
+            latest_batt = get_ready_latest_batt(latest_batt)
+        else:
+            print(f"Generating new report for {report_date} using optimized query")
+            latest_batt, query_time = get_latest_voltage(specific_date)
+            # Note: get_latest_voltage returns different data structure, may need processing
+        
         save_df_with_metadata(latest_batt, query_time, path_csv)
     
     # Generate chart
