@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.credentials import EMAIL_CONFIG
-from data_processing.file_operations import read_df_with_metadata
+from data_processing.file_operations import read_df_with_metadata, get_report_filename
 from data_processing.data_filters import get_LOW_latest_batt
 from emailing.tracking import get_emailed_dates, update_emailed_dates
 
@@ -45,7 +45,7 @@ def email_weekly_report():
     """
     
     for date in new_dates:
-        path_csv = f"latest_batt_reports/latest_batt_{date}.csv"
+        path_csv = get_report_filename(date, True)  # Weekly reports use DebugSMBs for now
         path_chart = f"latest_batt_reports/charts/snapshot_{date}.png"
         
         latest_batt, _ = read_df_with_metadata(path_csv)

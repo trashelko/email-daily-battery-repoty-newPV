@@ -4,7 +4,7 @@ This file now serves as a simple interface to the modular components.
 """
 
 import sys
-from reports.daily_report import generate_battery_snapshot_report
+from reports.create_report_on_date import generate_battery_snapshot_report
 
 if __name__ == "__main__":
     # Parse command line arguments
@@ -19,14 +19,14 @@ if __name__ == "__main__":
         print("  --help, -h  Show this help message")
         print()
         print("Examples:")
-        print("  python main.py                    # Latest data, DebugSMBs database")
+        print("  python main.py                    # Latest data, SMBs database")
         print("  python main.py --old              # Latest data, DebugSMBs database")
-        print("  python main.py --manual           # Specific date, DebugSMBs database")
+        print("  python main.py --manual           # Specific date, SMBs database")
         print("  python main.py --manual --old     # Specific date, DebugSMBs database")
         print()
-        print("Note: Currently only DebugSMBs database is implemented.")
-        print("      SMBs database implementation coming soon.")
+        print("Note: SMBs database is now the default (faster).")
+        print("      Use --old flag for DebugSMBs database.")
         sys.exit(0)
     
-    # For now, always use old query since new SMBs implementation is not ready
-    generate_battery_snapshot_report(manual_mode, True)
+    # Use the query method based on the flag (SMBs by default, DebugSMBs with --old)
+    generate_battery_snapshot_report(manual_mode, use_old_query)

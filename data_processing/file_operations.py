@@ -3,6 +3,8 @@ File Input/Output operations for battery data with metadata support.
 """
 
 import pandas as pd
+import os
+from datetime import datetime
 
 def save_df_with_metadata(df, query_time, path_csv):
     """
@@ -37,3 +39,26 @@ def read_df_with_metadata(path_csv):
     
     df['EventTimeUTC'] = pd.to_datetime(df['EventTimeUTC'])
     return df, query_time
+
+def get_report_filename(date_str=None, use_old_query=True):
+    """
+    Generate standardized report filename.
+    
+    Args:
+        date_str (str, optional): Date in 'YYYY-MM-DD' format. If None, uses today.
+        use_old_query (bool): Whether using DebugSMBs (True) or SMBs (False) database
+        
+    Returns:
+        str: Full path to the report file
+    """
+    if date_str:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        report_date = date_obj.strftime('%-d%b%y')
+    else:
+        report_date = datetime.now().strftime('%-d%b%y')
+    
+    # Add database indicator to filename
+    db_suffix = "debug" if use_old_query else "smbs"
+    filename = f"latest_batt_reports/latest_batt_{report_date}_{db_suffix}.csv"
+    
+    return filename

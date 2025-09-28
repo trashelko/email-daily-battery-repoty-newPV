@@ -65,68 +65,42 @@ def get_latest_batt(specific_date=None):
     """
     conn = get_db_connection()
 
-    if specific_date is None:
-        # Get the most recent data up to now, looking back 4 months
-        query_latest_batt = """
-            WITH LatestBursts AS (
-                SELECT
-                    [DeviceID],
-                    [DeviceName],
-                    [EventTimeUTC],
-                    [PayloadData],
-                    ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
-                FROM [dbo].[Bursts]
-                WHERE
-                    CustomerName = 'Zim'
-                    AND FPort = 1
-                    AND DeviceID LIKE 'A0%'
-                    AND PayloadData LIKE '%Battery Level%'
-                    AND PayloadData NOT LIKE '%Battery Level 0%'
-                    AND EventTimeUTC >= DATEADD(MONTH, -4, GETUTCDATE())
-            )
-            SELECT
-                [DeviceID],
-                [DeviceName],
-                [EventTimeUTC],
-                [PayloadData]
-            FROM LatestBursts
-            WHERE rn = 1
-            ORDER BY [EventTimeUTC] DESC;
-            """
-    else:
-        # Convert specific_date to datetime object for noon
+    # Build date filter if specific_date is provided
+    date_filter = ""
+    if specific_date:
         date_obj = datetime.strptime(specific_date, "%Y-%m-%d")
         noon_datetime = date_obj.replace(hour=12, minute=0, second=0)
         target_datetime = noon_datetime.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Get the latest data for each device up to noon on the specified date, looking back 4 months
-        query_latest_batt = f"""
-            WITH LatestBursts AS (
-                SELECT
-                    [DeviceID],
-                    [DeviceName],
-                    [EventTimeUTC],
-                    [PayloadData],
-                    ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
-                FROM [dbo].[Bursts]
-                WHERE
-                    CustomerName = 'Zim'
-                    AND FPort = 1
-                    AND DeviceID LIKE 'A0%'
-                    AND PayloadData LIKE '%Battery Level%'
-                    AND PayloadData NOT LIKE '%Battery Level 0%'
-                    AND EventTimeUTC <= '{target_datetime}'
-                    AND EventTimeUTC >= DATEADD(MONTH, -4, CAST('{specific_date}' AS DATETIME))
-            )
+        date_filter = f"AND EventTimeUTC <= '{target_datetime}'"
+    
+    # Get the latest data for each device, looking back 4 months
+    query_latest_batt = f"""
+        WITH LatestBursts AS (
             SELECT
                 [DeviceID],
                 [DeviceName],
                 [EventTimeUTC],
-                [PayloadData]
-            FROM LatestBursts
-            WHERE rn = 1
-            ORDER BY [EventTimeUTC] DESC;
-            """
+                [PayloadData],
+                ROW_NUMBER() OVER (PARTITION BY [DeviceID] ORDER BY [EventTimeUTC] DESC) AS rn
+            FROM [dbo].[Bursts]
+            WHERE 1=1
+                AND CustomerName = 'Zim'
+                AND FPort = 1
+                AND DeviceID LIKE 'A0%'
+                AND PayloadData LIKE '%Battery Level%'
+                AND PayloadData NOT LIKE '%Battery Level 0%'
+                AND EventTimeUTC >= DATEADD(MONTH, -4, {'GETUTCDATE()' if specific_date is None else f"CAST('{specific_date}' AS DATETIME)"})
+                {date_filter}
+        )
+        SELECT
+            [DeviceID],
+            [DeviceName],
+            [EventTimeUTC],
+            [PayloadData]
+        FROM LatestBursts
+        WHERE rn = 1
+        ORDER BY [EventTimeUTC] DESC;
+        """
     
     start_time = time.time()
     latest_batt = pd.read_sql(query_latest_batt, conn)
@@ -157,27 +131,29 @@ def get_latest_voltage(specific_date=None):
     query_latest_voltage = f"""
         WITH LatestReport AS (
         SELECT
-            b.[ID]
+            b.[ID] AS ReportID
             ,b.[OrganizationId]
-            ,o.Name AS OrganizationName
+            ,o.Name AS CustomerName
             ,b.[AssetId]
             ,a.DeviceName AS DeviceID
-            ,b.[EventTime]
+            ,a.Name AS DeviceName
+            ,b.[EventTime] AS EventTimeUTC
             ,b.[Voltage]
-            ,ROW_NUMBER() OVER (PARTITION BY b.AssetID ORDER BY b.[EventTime],b.ID DESC) AS rn
+            ,ROW_NUMBER() OVER (PARTITION BY b.AssetID ORDER BY b.[EventTime] DESC, b.ID DESC) AS rn
         FROM [dbo].[BatteryInfo] AS b
         LEFT JOIN [dbo].[Assets] AS a ON b.AssetId = a.ID
         LEFT JOIN [dbo].[Organizations] AS o ON b.OrganizationId = o.ID
-        WHERE 1=1
+        WHERE b.[Voltage] > 2
         {date_filter}
         )
         SELECT 
-            ID
+            ReportID
             ,OrganizationId
-            ,OrganizationName
+            ,CustomerName
             ,AssetId
             ,DeviceID
-            ,EventTime
+            ,DeviceName
+            ,EventTimeUTC
             ,Voltage
         FROM LatestReport
         WHERE rn = 1

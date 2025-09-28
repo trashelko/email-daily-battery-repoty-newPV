@@ -23,7 +23,7 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     """
     if path_save is None:
         timestamp = datetime.now().strftime("%H%M%S")
-        filename = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}_{timestamp}.png"
+        filename = f"latest_batt_reports/charts/snapshot_{report_date}_{timestamp}.png"
         path_save = filename
     
     # Define chart styling
@@ -38,9 +38,9 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     # Filter data based on pairing requirement
     if paired:
         cond_paired = (latest_batt['DeviceID'] != latest_batt['DeviceName'])
-        df = latest_batt[(latest_batt['DeviceID'].isin(IDs_list)) & cond_paired]
     else:
-        df = latest_batt[latest_batt['DeviceID'].isin(IDs_list)]
+        cond_paired = latest_batt['CustomerName'].str.lower() == 'zim'
+    df = latest_batt[(latest_batt['DeviceID'].isin(IDs_list)) & cond_paired]
     
     # Create the chart
     plt.figure(figsize=(4, 6))

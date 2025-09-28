@@ -5,9 +5,9 @@ Daily battery report generation logic.
 import pandas as pd
 import os
 from data_processing.visualization import create_snapshot_chart
-from data_processing.parsing import get_ready_latest_batt
+from data_processing.parsing import process_debug_smbs_data, process_smbs_data
 from database.queries import get_latest_batt, get_latest_voltage
-from data_processing.file_operations import save_df_with_metadata, read_df_with_metadata
+from data_processing.file_operations import save_df_with_metadata, read_df_with_metadata, get_report_filename
 from data_processing.data_filters import filter_df_for_newPV
 from utils import prompt_for_date
 
@@ -29,13 +29,12 @@ def generate_battery_snapshot_report(manual_mode=False, use_old_query=False, spe
     # Generate report date string
     if specific_date:
         date_obj = pd.to_datetime(specific_date, format="%Y-%m-%d")
-        report_date = date_obj.strftime('%-d %b')
+        report_date = date_obj.strftime('%-d%b%y')
     else:
-        report_date = pd.Timestamp.today().strftime('%-d %b')
+        report_date = pd.Timestamp.today().strftime('%-d%b%y')
     
     # Define file paths
-    csv_filename = f"latest_batt_reports/latest_batt_{report_date.replace(' ', '')}.csv"
-    path_csv = csv_filename
+    path_csv = get_report_filename(specific_date, use_old_query)
 
     # Check if we already have a report for this date
     if os.path.exists(path_csv):
@@ -46,17 +45,17 @@ def generate_battery_snapshot_report(manual_mode=False, use_old_query=False, spe
         if use_old_query:
             print(f"Generating new report for {report_date} using DebugSMBs database")
             latest_batt, query_time = get_latest_batt(specific_date)
-            latest_batt = get_ready_latest_batt(latest_batt)
+            latest_batt = process_debug_smbs_data(latest_batt)
         else:
-            print(f"Generating new report for {report_date} using SMBs database (not implemented yet)")
-            # TODO: Implement SMBs database query
-            raise NotImplementedError("SMBs database implementation not ready yet")
+            print(f"Generating new report for {report_date} using SMBs database")
+            latest_batt, query_time = get_latest_voltage(specific_date)
+            latest_batt = process_smbs_data(latest_batt)
         
         save_df_with_metadata(latest_batt, query_time, path_csv)
     
     # Generate chart
     IDs_newPV = filter_df_for_newPV(latest_batt)
-    path_save_chart = f"latest_batt_reports/charts/snapshot_{report_date.replace(' ', '')}.png"
+    path_save_chart = f"latest_batt_reports/charts/snapshot_{report_date}.png"
     create_snapshot_chart(latest_batt, IDs_newPV, report_date, paired=True, list_name="NewPV & 6000+ Series", path_save=path_save_chart)
 
     return report_date
