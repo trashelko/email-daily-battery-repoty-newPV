@@ -4,14 +4,14 @@ Weekly battery report email functionality.
 
 import os
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import smtplib
-
+import subprocess
 import sys
-import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.credentials import EMAIL_CONFIG
@@ -21,17 +21,136 @@ from data_processing.visualization import create_snapshot_chart
 from emailing.tracking import get_emailed_dates, update_emailed_dates
 
 
+def generate_missing_report(date_str):
+    """
+    Generate a report for a specific date using the daily.py script.
+    
+    Args:
+        date_str (str): Date in 'YYYY-MM-DD' format
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Run the daily report generation for the specific date
+        cmd = [
+            sys.executable, 
+            "emailing/daily.py", 
+            "--manual"
+        ]
+        
+        # Use subprocess with input to provide the date
+        process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        
+        # Send the date as input to the manual prompt
+        stdout, stderr = process.communicate(input=date_str + '\n')
+        
+        if process.returncode == 0:
+            print(f"✅ Successfully generated report for {date_str}")
+            return True
+        else:
+            print(f"❌ Failed to generate report for {date_str}")
+            print(f"Error: {stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Exception generating report for {date_str}: {str(e)}")
+        return False
+
+
+def find_missing_dates(emailed_dates, today_date):
+    """
+    Find dates between the last emailed date and today that need reports.
+    
+    Args:
+        emailed_dates (list): List of already emailed date strings
+        today_date (datetime): Today's date
+        
+    Returns:
+        list: List of missing date strings in 'YYYY-MM-DD' format
+    """
+    if not emailed_dates:
+        # If no emails sent yet, start from 7 days ago
+        start_date = today_date - timedelta(days=7)
+    else:
+        # Find the most recent emailed date
+        last_emailed_str = max(emailed_dates, key=lambda x: datetime.strptime(x, "%d%b%y"))
+        last_emailed = datetime.strptime(last_emailed_str, "%d%b%y")
+        start_date = last_emailed + timedelta(days=1)
+    
+    missing_dates = []
+    current_date = start_date
+    
+    while current_date <= today_date:
+        # Check if report already exists for this date
+        date_str = current_date.strftime("%Y-%m-%d")
+        date_file = current_date.strftime("%d%b%y")
+        
+        # Check for both regular and SMBs versions
+        regular_path = get_report_filename(date_str, True)  # DebugSMBs
+        smbs_path = get_report_filename(date_str, False)    # SMBs
+        
+        if not os.path.exists(regular_path) and not os.path.exists(smbs_path):
+            missing_dates.append(date_str)
+            print(f"📅 Missing report for {date_str}")
+        else:
+            print(f"✅ Report exists for {date_str}")
+            
+        current_date += timedelta(days=1)
+    
+    return missing_dates
+
+
 def email_weekly_report():
     """
     Send weekly report with all new reports that haven't been emailed yet.
+    First generates any missing reports, then sends the weekly summary.
     """
+    print("🔄 Starting weekly report process...")
+    
+    # Get current date and emailed dates
+    today = datetime.now()
+    emailed_dates = get_emailed_dates()
+    
+    print(f"📅 Today's date: {today.strftime('%d%b%y')}")
+    print(f"📧 Last emailed dates: {emailed_dates[-5:] if len(emailed_dates) > 5 else emailed_dates}")
+    
+    # Find missing dates that need report generation
+    missing_dates = find_missing_dates(emailed_dates, today)
+    
+    if missing_dates:
+        print(f"🔧 Generating {len(missing_dates)} missing reports...")
+        successful_generations = 0
+        failed_generations = 0
+        
+        for date_str in missing_dates:
+            if generate_missing_report(date_str):
+                successful_generations += 1
+            else:
+                failed_generations += 1
+                print(f"⚠️ Warning: Failed to generate report for {date_str}")
+        
+        print(f"📊 Generation results: {successful_generations} successful, {failed_generations} failed")
+        
+        if failed_generations > 0:
+            print(f"⚠️ Warning: {failed_generations} reports failed to generate, but continuing with weekly email...")
+    else:
+        print("✅ All reports are up to date")
+    
+    # Now proceed with the weekly email logic
     files = [f for f in os.listdir("latest_batt_reports") if f.startswith("latest_batt_") and f.endswith(".csv")]
     report_dates = [f.replace("latest_batt_", "").replace(".csv", "") for f in files]
     # Remove _smbs suffix if present and sort by date
     report_dates = [date.replace("_smbs", "") for date in report_dates]
     report_dates = sorted(report_dates, key=lambda x: datetime.strptime(x, "%d%b%y"))
 
-    emailed_dates = get_emailed_dates()
     new_dates = [date for date in report_dates if date not in emailed_dates]
 
     print(f"🆕 New dates to email: {new_dates}")
@@ -42,8 +161,8 @@ def email_weekly_report():
     
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
-    email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
-    # email['To'] = EMAIL_CONFIG['recipients'][0]
+    # email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
+    email['To'] = EMAIL_CONFIG['recipients'][0]
     email['Subject'] = f"Weekly Battery Report - {len(new_dates)} Reports"
 
     # Helper function to get power mode counts
