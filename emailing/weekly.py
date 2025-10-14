@@ -32,21 +32,25 @@ def generate_missing_report(date_str):
         bool: True if successful, False otherwise
     """
     try:
-        # Run the daily report generation for the specific date
-        cmd = [
-            sys.executable, 
-            "emailing/daily.py", 
-            "--manual"
-        ]
+        # Get the project root directory
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        # Use subprocess with input to provide the date
+        # Use shell=True to properly activate the virtual environment
+        # This mimics the behavior of the Automator apps
+        cmd = f"""
+        cd "{project_root}" && 
+        source venv/bin/activate && 
+        python emailing/daily.py --manual
+        """
+        
+        # Use subprocess with shell=True and input to provide the date
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            shell=True
         )
         
         # Send the date as input to the manual prompt
@@ -161,8 +165,8 @@ def email_weekly_report():
     
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
-    # email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
-    email['To'] = EMAIL_CONFIG['recipients'][0]
+    email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
+    # email['To'] = EMAIL_CONFIG['recipients'][0]
     email['Subject'] = f"Weekly Battery Report - {len(new_dates)} Reports"
 
     # Helper function to get power mode counts
