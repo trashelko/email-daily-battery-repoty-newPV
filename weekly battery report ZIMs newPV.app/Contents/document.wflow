@@ -64,8 +64,7 @@ cd "/Users/rasheltublin/Desktop/Hoopo/ZIM pilot/newPV battery report" || exit
 
 source venv/bin/activate
 
-python3 email_weekly_report.py
-</string>
+python emailing/weekly.py</string>
 					<key>CheckedForUserDefaultShell</key>
 					<true/>
 					<key>inputMethod</key>
@@ -178,7 +177,7 @@ python3 email_weekly_report.py
 				<key>isViewVisible</key>
 				<integer>1</integer>
 				<key>location</key>
-				<string>464.000000:383.000000</string>
+				<string>464.000000:252.000000</string>
 				<key>nibPath</key>
 				<string>/System/Library/Automator/Run Shell Script.action/Contents/Resources/Base.lproj/main.nib</string>
 			</dict>

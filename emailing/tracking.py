@@ -16,7 +16,7 @@ def get_emailed_dates():
     try:
         with open(path_emailed_dates, 'r') as f:
             dates = f.read().splitlines()
-        return sorted(dates, key=lambda x: datetime.strptime(x, "%d%b"))
+        return sorted(dates, key=lambda x: datetime.strptime(x, "%d%b%y"))
     except FileNotFoundError:
         return []
 

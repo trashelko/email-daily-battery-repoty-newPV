@@ -160,8 +160,8 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     zim_c_table = zim_c_table.drop(['PayloadData', 'index', 'AssetId', 'OrganizationId'], axis=1, errors='ignore')
     zim_c_table.sort_values(by='Voltage', inplace=True)
     
-    # Section 3: samskip devices - only critical and low
-    samskip_table = samskip_devices[samskip_devices['PowerMode'].isin(['Critical', 'Low'])].copy()
+    # Section 3: samskip devices - critical, low, and medium
+    samskip_table = samskip_devices[samskip_devices['PowerMode'].isin(['Critical', 'Low', 'Medium'])].copy()
     samskip_table = samskip_table.drop(['PayloadData', 'index', 'AssetId', 'OrganizationId'], axis=1, errors='ignore')
     samskip_table.sort_values(by='Voltage', inplace=True)
     
@@ -178,7 +178,10 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
     email['To'] = EMAIL_CONFIG['recipients'][0]
-    email['Subject'] = f"Daily Battery Report"
+    
+    # Format date for subject (e.g., "13 October")
+    formatted_date = pd.to_datetime(report_date, format='%d%b%y').strftime('%-d %B')
+    email['Subject'] = f"Daily Battery Report - {formatted_date}"
 
     # Add images (only for sections with data)
     for section, chart_path in chart_paths.items():
@@ -208,7 +211,6 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     <html>
         <body>
             <h2>Daily Battery Report - {query_type}</h2>
-            <p><strong>Report Date:</strong> {pd.to_datetime(report_date, format='%d%b%y').strftime('%-d %B %Y')}</p>
             <p><strong>Performance:</strong> {msg}</p>
             <br>
             
@@ -259,7 +261,7 @@ def email_daily_report(manual_mode=False, use_old_query=False):
             </ul>
             <p><strong>Power Mode Counts:</strong> {get_power_mode_text(samskip_counts)}</p>
             {'<img src="cid:samskip_chart" style="display:block;"><br>' if 'samskip' in chart_paths else ''}
-            <h4>Critical & Low Battery Devices ({samskip_total} devices):</h4>
+            <h4>Critical, Low & Medium Battery Devices ({samskip_total} devices):</h4>
             {f'<p><em>Showing first 30 of {samskip_total} devices. Full data attached as CSV.</em></p>' if samskip_has_more else ''}
             {samskip_html}
         </body>
