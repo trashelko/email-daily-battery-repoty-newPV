@@ -52,6 +52,10 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     except:
         pass  # No legend to remove
     
+    # Set y-axis limit to always show 0 to 100% (total number of devices)
+    # This ensures that if the highest bar is less than 100%, there will be empty space above it
+    ax.set_ylim(0, len(df))
+    
     # Add percentage labels on bars
     for p in ax.patches:
         height = p.get_height()
