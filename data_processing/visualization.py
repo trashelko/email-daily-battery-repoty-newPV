@@ -57,9 +57,11 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     ax.set_ylim(0, len(df))
     
     # Add percentage labels on bars
+    # Use 2% of the y-axis range for spacing, which works well for both small and large datasets
+    label_offset = len(df) * 0.007 if len(df) > 0 else 1
     for p in ax.patches:
         height = p.get_height()
-        ax.text(p.get_x() + p.get_width() / 2., height + len(df)/500,
+        ax.text(p.get_x() + p.get_width() / 2., height + label_offset,
                 f'{round(int(height)/len(df)*100,2)}%', ha="center")
     
     # Customize chart appearance

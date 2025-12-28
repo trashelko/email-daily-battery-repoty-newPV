@@ -133,18 +133,42 @@ def email_weekly_report():
         print(f"🔧 Generating {len(missing_dates)} missing reports...")
         successful_generations = 0
         failed_generations = 0
+        failed_dates = []
         
         for date_str in missing_dates:
             if generate_missing_report(date_str):
                 successful_generations += 1
             else:
                 failed_generations += 1
+                failed_dates.append(date_str)
                 print(f"⚠️ Warning: Failed to generate report for {date_str}")
         
         print(f"📊 Generation results: {successful_generations} successful, {failed_generations} failed")
         
+        # Verify that all missing reports were actually created
+        still_missing = []
+        for date_str in missing_dates:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            date_file = date_obj.strftime("%d%b%y")
+            
+            # Check for both regular and SMBs versions
+            regular_path = get_report_filename(date_str, True)  # DebugSMBs
+            smbs_path = get_report_filename(date_str, False)    # SMBs
+            
+            if not os.path.exists(regular_path) and not os.path.exists(smbs_path):
+                still_missing.append(date_str)
+        
+        # If any reports are still missing after generation, abort to prevent incomplete weekly email
+        if still_missing:
+            print(f"❌ ERROR: {len(still_missing)} required reports are still missing after generation attempt:")
+            for date_str in still_missing:
+                print(f"   - {date_str}")
+            print("❌ Aborting weekly email to prevent sending incomplete report.")
+            print("   Please investigate and fix the report generation issues before retrying.")
+            sys.exit(1)
+        
         if failed_generations > 0:
-            print(f"⚠️ Warning: {failed_generations} reports failed to generate, but continuing with weekly email...")
+            print(f"⚠️ Note: {failed_generations} reports had generation warnings, but all reports now exist.")
     else:
         print("✅ All reports are up to date")
     
@@ -161,7 +185,24 @@ def email_weekly_report():
 
     if not new_dates:
         print("No new reports to send.")
-        return
+        sys.exit(0)  # Success - no new reports is a valid state
+    
+    # Verify all new_dates have corresponding CSV files before proceeding
+    missing_csv_files = []
+    for date in new_dates:
+        date_obj = datetime.strptime(date, "%d%b%y")
+        date_iso = date_obj.strftime("%Y-%m-%d")
+        path_csv = get_report_filename(date_iso, False)  # SMBs database
+        
+        if not os.path.exists(path_csv):
+            missing_csv_files.append((date, path_csv))
+    
+    if missing_csv_files:
+        print(f"❌ ERROR: {len(missing_csv_files)} CSV files are missing for dates that should be included:")
+        for date, path in missing_csv_files:
+            print(f"   - {date}: {path}")
+        print("❌ Aborting weekly email to prevent sending incomplete report.")
+        sys.exit(1)
     
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
@@ -178,6 +219,7 @@ def email_weekly_report():
 
     # Collect data for all dates first
     all_dates_data = {}
+    read_errors = []
     
     for date in new_dates:
         # Convert date from %d%b%y format to %Y-%m-%d format for get_report_filename
@@ -189,22 +231,34 @@ def email_weekly_report():
         print(f"📁 Reading CSV for {date}: {path_csv}")
         
         if not os.path.exists(path_csv):
-            print(f"❌ CSV file not found for {date}: {path_csv}")
+            read_errors.append((date, f"CSV file not found: {path_csv}"))
             continue
+        
+        try:
+            latest_batt, _ = read_df_with_metadata(path_csv)
             
-        latest_batt, _ = read_df_with_metadata(path_csv)
-        
-        # Get section data (same as daily email)
-        new_pv_devices = get_new_pv_panel_devices(latest_batt)
-        zim_c_devices = get_zim_c_devices(latest_batt)
-        samskip_devices = get_samskip_devices(latest_batt)
-        
-        # Store data for this date
-        all_dates_data[date] = {
-            'new_pv': new_pv_devices,
-            'zim_c': zim_c_devices,
-            'samskip': samskip_devices
-        }
+            # Get section data (same as daily email)
+            new_pv_devices = get_new_pv_panel_devices(latest_batt)
+            zim_c_devices = get_zim_c_devices(latest_batt)
+            samskip_devices = get_samskip_devices(latest_batt)
+            
+            # Store data for this date
+            all_dates_data[date] = {
+                'new_pv': new_pv_devices,
+                'zim_c': zim_c_devices,
+                'samskip': samskip_devices
+            }
+        except Exception as e:
+            read_errors.append((date, f"Error reading CSV: {str(e)}"))
+            continue
+    
+    # If any CSV files failed to read, abort to prevent incomplete weekly email
+    if read_errors:
+        print(f"❌ ERROR: Failed to read {len(read_errors)} CSV files:")
+        for date, error_msg in read_errors:
+            print(f"   - {date}: {error_msg}")
+        print("❌ Aborting weekly email to prevent sending incomplete report.")
+        sys.exit(1)
     
     # Use existing charts (no generation needed)
     latest_date = new_dates[-1]  # Use the most recent date for charts
@@ -345,6 +399,13 @@ def email_weekly_report():
     print(f"✅ Weekly email sent successfully")
     print(f"📊 Reports included: {', '.join(new_dates)}")
     print(f"📈 Total reports: {len(new_dates)}")
+    sys.exit(0)  # Success
 
 if __name__ == "__main__":
-    email_weekly_report()
+    try:
+        email_weekly_report()
+    except Exception as e:
+        print(f"❌ Fatal error in weekly report: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
