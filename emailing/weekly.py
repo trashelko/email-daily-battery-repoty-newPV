@@ -278,7 +278,7 @@ def email_weekly_report(use_emailed_dates_tracking=False, debug_mode=False):
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
     email['To'] = ', '.join(recipients)
-    email['Subject'] = f"(NEW) Weekly Battery Report - {len(new_dates)} Reports"
+    email['Subject'] = f"Weekly Battery Report - {len(new_dates)} Reports"
 
     # Helper function to get power mode counts
     def get_power_mode_text(counts):
@@ -511,8 +511,10 @@ def email_weekly_report(use_emailed_dates_tracking=False, debug_mode=False):
         
         # Get organization names and device count
         org_names_df, org_names_query_time = get_organization_names(target_org_ids)
+        print(f"✅ Organization names query completed in {int(org_names_query_time)} seconds")
+        
         device_count, device_count_query_time = get_total_device_count(target_org_ids)
-        print(f"✅ Organization info query completed in {int(org_names_query_time + device_count_query_time)} seconds")
+        print(f"✅ Device count query completed in {int(device_count_query_time)} seconds")
         
         if len(fleet_stats_df) > 0 and fleet_stats_df['TotalYears'].iloc[0] > 0:
             # Ensure charts directory exists
@@ -566,7 +568,7 @@ def email_weekly_report(use_emailed_dates_tracking=False, debug_mode=False):
                     </ul>
                 </li>
                 <li><strong>Total number of devices:</strong> {device_count}</li>
-                <li>Statistics calculated from historical battery data</li>
+                <li>Statistics calculated from historical battery data (SMBs database)</li>
                 <li>Shows percentage of operational time spent in each power mode</li>
             </ul>
             {fleet_chart_html}

@@ -2,10 +2,15 @@
 Data visualization functions for battery reports.
 """
 
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from datetime import datetime
+from utils import format_date_for_display
 
 def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_name='', path_save=None):
     """
@@ -72,7 +77,9 @@ def create_snapshot_chart(latest_batt, IDs_list, report_date, paired=True, list_
     
     plt.xlabel('Power Zone')
     plt.ylabel('Trackers per Power Zone')
-    plt.title(f"Tracker Battery Power Zones\n{list_name} ({len(df)}) devices\nSnapshot of {report_date}")
+    # Format date for display (e.g., "5 Jan 2026")
+    formatted_date = format_date_for_display(report_date)
+    plt.title(f"Tracker Battery Power Zones\n{list_name} ({len(df)}) devices\nSnapshot of {formatted_date}")
     
     plt.tight_layout()
     plt.savefig(path_save)

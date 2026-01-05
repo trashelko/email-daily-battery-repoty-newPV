@@ -43,20 +43,56 @@ python emailing/daily.py --help
 ```bash
 python emailing/weekly.py
 ```
-Sends an email with reports from the last 7 days (including today). This is the default behavior.
+Sends an email with reports from the last 7 days (including today) to all recipients configured in `emailing/credentials.py`. This is the default behavior.
+
+### Debug Mode (Single Recipient)
+```bash
+python emailing/weekly.py --debug
+# or
+python emailing/weekly.py -d
+```
+Sends the weekly report to only the first recipient (rashel) from the recipients list. Useful for testing before sending to all recipients.
 
 ### Using Email Tracking (Deprecated)
 ```bash
 python emailing/weekly.py --use-tracking
+# or
+python emailing/weekly.py --track
 ```
 Uses the old tracking system based on `emailed_dates.txt` to send only new reports that haven't been emailed yet.
 
-**Note:** The `emailed_dates.txt` file is only updated automatically when there are multiple recipients (>1). For single recipient emails, the file is not updated.
+### Combined Modes
+You can combine flags:
+```bash
+# Debug mode with tracking
+python emailing/weekly.py --debug --use-tracking
+```
+
+### Weekly Report Contents
+The weekly report includes:
+1. **Section 1: New PV Panel** - Devices from Mila's list and ZIM devices with specific criteria
+2. **Section 2: ZIM C-Series Devices** - ZIM devices with DeviceID starting with 'C'
+3. **Section 3: Samskip Devices** - All Samskip devices
+4. **Section 4: HMM Devices** - All HMM devices
+5. **Fleet-Wide Power Mode Statistics** - Statistics for selected organizations (IDs: 18, 54, 90, 31, 89, 69, 91, 51) including:
+   - Organization names and device counts
+   - Total number of devices
+   - Power mode percentages (High, Medium, Low, Critical)
+
+**Note:** The `emailed_dates.txt` file is only updated automatically when there are multiple recipients (>1). For single recipient emails (debug mode), the file is not updated.
 
 ## Key Notes
 
-Note 2. **credentials_template.py** DOES NOT contain any actual credentials -- this is a dummy-file with the set up of access info to db and to emails. In code (and on my machine) I have **credentials.py** -- this contains the real stuff.
-  The code is set up such that if .csv file of current date exists -- it won't try accesing the database and just use the CSV-file. So if report of _today_ exists -- this should work without database access.
+### Credentials
+**credentials_template.py** files DO NOT contain any actual credentials -- these are dummy files with the setup structure for database and email access. 
+
+The actual credential files are:
+- `database/credentials.py` - Contains database connection credentials (DB_DebugSMBs_CONFIG and DB_SMBs_CONFIG)
+- `emailing/credentials.py` - Contains email configuration (EMAIL_CONFIG with sender, password, and recipients list)
+
+Both credential files are in `.gitignore` and should not be committed to the repository.
+
+**Note:** The code is set up such that if a .csv file of the current date exists, it won't try accessing the database and will just use the CSV file. So if a report for _today_ exists, this should work without database access.
 
 All files:
 

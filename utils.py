@@ -70,3 +70,28 @@ def parse_date_flexible(date_str):
                 date_str_normalized = f"{int(day):02d}{month}{year}"
                 return datetime.strptime(date_str_normalized, "%d%b%y")
             raise ValueError(f"Could not parse date: {date_str}")
+
+def format_date_for_display(date_input):
+    """
+    Format date for display in charts, emails, etc. (e.g., '5 Jan 2026').
+    Handles both datetime objects and date strings in filename format.
+    
+    Args:
+        date_input: datetime object, or date string in format like '5Jan26' or '05Jan26'
+        
+    Returns:
+        str: Formatted date string (e.g., '5 Jan 2026')
+    """
+    # If it's already a datetime object, use it directly
+    if isinstance(date_input, datetime):
+        date_obj = date_input
+    else:
+        # Otherwise, parse the date string (handles both '5Jan26' and '05Jan26' formats)
+        date_obj = parse_date_flexible(date_input)
+    
+    # Format for display: '%-d %b %Y' (e.g., '5 Jan 2026')
+    try:
+        return date_obj.strftime('%-d %b %Y')
+    except ValueError:
+        # Fallback for systems that don't support %-d (Windows)
+        return f"{date_obj.day} {date_obj.strftime('%b %Y')}"
