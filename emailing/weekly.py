@@ -15,10 +15,12 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.credentials import EMAIL_CONFIG
+from database.queries import get_active_devices, get_power_mode_statistics
 from data_processing.file_operations import read_df_with_metadata, get_report_filename
-from data_processing.data_filters import get_new_pv_panel_devices, get_zim_c_devices, get_samskip_devices
-from data_processing.visualization import create_snapshot_chart
+from data_processing.data_filters import get_new_pv_panel_devices, get_zim_c_devices, get_samskip_devices, get_hmm_devices
+from data_processing.visualization import create_snapshot_chart, plot_power_stats_combined
 from emailing.tracking import get_emailed_dates, update_emailed_dates
+from utils import format_date_for_filename, parse_date_flexible
 
 
 def generate_missing_report(date_str):
@@ -84,9 +86,9 @@ def find_missing_dates(emailed_dates, today_date):
         # If no emails sent yet, start from 7 days ago
         start_date = today_date - timedelta(days=7)
     else:
-        # Find the most recent emailed date
-        last_emailed_str = max(emailed_dates, key=lambda x: datetime.strptime(x, "%d%b%y"))
-        last_emailed = datetime.strptime(last_emailed_str, "%d%b%y")
+        # Find the most recent emailed date (handle both formats)
+        last_emailed_str = max(emailed_dates, key=lambda x: parse_date_flexible(x))
+        last_emailed = parse_date_flexible(last_emailed_str)
         start_date = last_emailed + timedelta(days=1)
     
     missing_dates = []
@@ -95,7 +97,7 @@ def find_missing_dates(emailed_dates, today_date):
     while current_date <= today_date:
         # Check if report already exists for this date
         date_str = current_date.strftime("%Y-%m-%d")
-        date_file = current_date.strftime("%d%b%y")
+        date_file = format_date_for_filename(current_date)
         
         # Check for both regular and SMBs versions
         regular_path = get_report_filename(date_str, True)  # DebugSMBs
@@ -112,22 +114,55 @@ def find_missing_dates(emailed_dates, today_date):
     return missing_dates
 
 
-def email_weekly_report():
+def email_weekly_report(use_emailed_dates_tracking=False):
     """
-    Send weekly report with all new reports that haven't been emailed yet.
-    First generates any missing reports, then sends the weekly summary.
+    Send weekly report with reports from the last 7 days.
+    Optionally can use emailed_dates.txt tracking (deprecated).
+    
+    Args:
+        use_emailed_dates_tracking (bool): If True, use old tracking system based on emailed_dates.txt.
+                                          If False (default), send last 7 days from today.
     """
     print("🔄 Starting weekly report process...")
     
-    # Get current date and emailed dates
+    # Get current date
     today = datetime.now()
-    emailed_dates = get_emailed_dates()
     
-    print(f"📅 Today's date: {today.strftime('%d%b%y')}")
-    print(f"📧 Last emailed dates: {emailed_dates[-5:] if len(emailed_dates) > 5 else emailed_dates}")
-    
-    # Find missing dates that need report generation
-    missing_dates = find_missing_dates(emailed_dates, today)
+    if use_emailed_dates_tracking:
+        # OLD MODE: Use emailed_dates.txt tracking (deprecated)
+        emailed_dates = get_emailed_dates()
+        print(f"📅 Today's date: {format_date_for_filename(today)}")
+        print(f"📧 Last emailed dates: {emailed_dates[-5:] if len(emailed_dates) > 5 else emailed_dates}")
+        
+        # Find missing dates that need report generation
+        missing_dates = find_missing_dates(emailed_dates, today)
+    else:
+        # NEW MODE: Last 7 days from today
+        print(f"📅 Today's date: {format_date_for_filename(today)}")
+        print("📊 Using last 7 days mode (emailed_dates.txt tracking disabled)")
+        
+        # Get last 7 days (including today)
+        date_range = []
+        for i in range(7):
+            date = today - timedelta(days=i)
+            date_range.append(date)
+        date_range.reverse()  # Oldest to newest
+        
+        # Check which dates need report generation
+        missing_dates = []
+        for date in date_range:
+            date_str = date.strftime("%Y-%m-%d")
+            date_file = format_date_for_filename(date)
+            
+            # Check for both regular and SMBs versions
+            regular_path = get_report_filename(date_str, True)  # DebugSMBs
+            smbs_path = get_report_filename(date_str, False)    # SMBs
+            
+            if not os.path.exists(regular_path) and not os.path.exists(smbs_path):
+                missing_dates.append(date_str)
+                print(f"📅 Missing report for {date_str}")
+            else:
+                print(f"✅ Report exists for {date_str}")
     
     if missing_dates:
         print(f"🔧 Generating {len(missing_dates)} missing reports...")
@@ -149,7 +184,7 @@ def email_weekly_report():
         still_missing = []
         for date_str in missing_dates:
             date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-            date_file = date_obj.strftime("%d%b%y")
+            date_file = format_date_for_filename(date_obj)
             
             # Check for both regular and SMBs versions
             regular_path = get_report_filename(date_str, True)  # DebugSMBs
@@ -173,19 +208,44 @@ def email_weekly_report():
         print("✅ All reports are up to date")
     
     # Now proceed with the weekly email logic
-    files = [f for f in os.listdir("latest_batt_reports") if f.startswith("latest_batt_") and f.endswith(".csv")]
-    report_dates = [f.replace("latest_batt_", "").replace(".csv", "") for f in files]
-    # Remove _smbs suffix if present and sort by date
-    report_dates = [date.replace("_smbs", "") for date in report_dates]
-    report_dates = sorted(report_dates, key=lambda x: datetime.strptime(x, "%d%b%y"))
+    if use_emailed_dates_tracking:
+        # OLD MODE: Filter by emailed_dates
+        files = [f for f in os.listdir("latest_batt_reports") if f.startswith("latest_batt_") and f.endswith(".csv")]
+        report_dates = [f.replace("latest_batt_", "").replace(".csv", "") for f in files]
+        # Remove _smbs suffix if present and sort by date
+        report_dates = [date.replace("_smbs", "").replace("_debug", "") for date in report_dates]
+        report_dates = sorted(report_dates, key=lambda x: parse_date_flexible(x))
+        
+        emailed_dates = get_emailed_dates()
+        new_dates = [date for date in report_dates if date not in emailed_dates]
+    else:
+        # NEW MODE: Last 7 days (reuse date_range from above)
+        # Get last 7 days (including today)
+        date_range = []
+        for i in range(7):
+            date = today - timedelta(days=i)
+            date_range.append(date)
+        date_range.reverse()  # Oldest to newest
+        
+        new_dates = []
+        for date in date_range:
+            # Use consistent format (no leading zero) to match daily.py chart naming
+            date_file = format_date_for_filename(date)
+            date_str = date.strftime("%Y-%m-%d")
+            # Check if report exists (prefer SMBs, fallback to DebugSMBs)
+            smbs_path = get_report_filename(date_str, False)  # SMBs database
+            regular_path = get_report_filename(date_str, True)  # DebugSMBs
+            
+            if os.path.exists(smbs_path) or os.path.exists(regular_path):
+                new_dates.append(date_file)
+        
+        new_dates = sorted(new_dates, key=lambda x: parse_date_flexible(x))
 
-    new_dates = [date for date in report_dates if date not in emailed_dates]
-
-    print(f"🆕 New dates to email: {new_dates}")
+    print(f"🆕 Dates to email: {new_dates}")
 
     if not new_dates:
-        print("No new reports to send.")
-        sys.exit(0)  # Success - no new reports is a valid state
+        print("No reports to send.")
+        sys.exit(0)  # Success - no reports is a valid state
     
     # Verify all new_dates have corresponding CSV files before proceeding
     missing_csv_files = []
@@ -217,13 +277,26 @@ def email_weekly_report():
         medium = counts.get('Medium', 0)
         return f"Critical: {critical}, Low: {low}, Medium: {medium}"
 
+    # Query active devices (weekly reports use SMBs database)
+    # Query all active devices once, then filter in Python (can't include large lists in SQL)
+    active_device_ids = None
+    try:
+        active_devices_df, _ = get_active_devices()
+        # Get set of active device IDs (DeviceID only - filtering done in Python)
+        active_device_ids = set(active_devices_df['DeviceID'].dropna().tolist())
+        print(f"✅ Found {len(active_device_ids)} active devices")
+    except Exception as e:
+        print(f"⚠️ Warning: Could not query active devices: {e}")
+        print("   Continuing without active device filtering")
+        active_device_ids = None
+    
     # Collect data for all dates first
     all_dates_data = {}
     read_errors = []
     
     for date in new_dates:
-        # Convert date from %d%b%y format to %Y-%m-%d format for get_report_filename
-        date_obj = datetime.strptime(date, "%d%b%y")
+        # Convert date from flexible format to %Y-%m-%d format for get_report_filename
+        date_obj = parse_date_flexible(date)
         date_iso = date_obj.strftime("%Y-%m-%d")
         
         # Read existing CSV data (no generation needed)
@@ -237,16 +310,18 @@ def email_weekly_report():
         try:
             latest_batt, _ = read_df_with_metadata(path_csv)
             
-            # Get section data (same as daily email)
-            new_pv_devices = get_new_pv_panel_devices(latest_batt)
-            zim_c_devices = get_zim_c_devices(latest_batt)
-            samskip_devices = get_samskip_devices(latest_batt)
+            # Get section data (filtered by active devices if available)
+            new_pv_devices = get_new_pv_panel_devices(latest_batt, active_device_ids)
+            zim_c_devices = get_zim_c_devices(latest_batt, active_device_ids)
+            samskip_devices = get_samskip_devices(latest_batt, active_device_ids)
+            hmm_devices = get_hmm_devices(latest_batt, active_device_ids)
             
             # Store data for this date
             all_dates_data[date] = {
                 'new_pv': new_pv_devices,
                 'zim_c': zim_c_devices,
-                'samskip': samskip_devices
+                'samskip': samskip_devices,
+                'hmm': hmm_devices
             }
         except Exception as e:
             read_errors.append((date, f"Error reading CSV: {str(e)}"))
@@ -288,6 +363,14 @@ def email_weekly_report():
     else:
         print(f"⚠️ Samskip chart not found: {samskip_chart_path}")
     
+    # Section 4: HMM Devices chart
+    hmm_chart_path = f"latest_batt_reports/charts/hmm_devices_{latest_date}.png"
+    if os.path.exists(hmm_chart_path):
+        chart_paths['hmm'] = hmm_chart_path
+        print(f"📊 Using existing HMM chart: {hmm_chart_path}")
+    else:
+        print(f"⚠️ HMM chart not found: {hmm_chart_path}")
+    
     # Attach images
     for section, chart_path in chart_paths.items():
         with open(chart_path, 'rb') as f:
@@ -296,22 +379,24 @@ def email_weekly_report():
         img_part.add_header('Content-ID', f'<{section}_chart>')
         email.attach(img_part)
     
-    # Build HTML content with 3 sections
+    # Build HTML content with 4 sections
     new_pv_chart_html = '<img src="cid:new_pv_chart" style="display:block;"><br>' if 'new_pv' in chart_paths else ''
     zim_c_chart_html = '<img src="cid:zim_c_chart" style="display:block;"><br>' if 'zim_c' in chart_paths else ''
     samskip_chart_html = '<img src="cid:samskip_chart" style="display:block;"><br>' if 'samskip' in chart_paths else ''
+    hmm_chart_html = '<img src="cid:hmm_chart" style="display:block;"><br>' if 'hmm' in chart_paths else ''
     
     print(f"🔍 Chart HTML variables:")
     print(f"  new_pv_chart_html: {repr(new_pv_chart_html)}")
     print(f"  zim_c_chart_html: {repr(zim_c_chart_html)}")
     print(f"  samskip_chart_html: {repr(samskip_chart_html)}")
+    print(f"  hmm_chart_html: {repr(hmm_chart_html)}")
     print(f"  chart_paths keys: {list(chart_paths.keys())}")
     
     html_content = f"""
     <html>
         <body>
             <h2>Weekly Battery Report - {len(new_dates)} Reports</h2>
-            <p><strong>Reports included:</strong> {', '.join(pd.to_datetime(new_dates, format='%d%b%y').strftime('%-d %b'))}</p>
+            <p><strong>Reports included:</strong> {', '.join([parse_date_flexible(d).strftime('%-d %b') for d in new_dates])}</p>
             <br>
             
             <h3>Section 1: New PV Panel</h3>
@@ -326,6 +411,7 @@ def email_weekly_report():
                     </ul>
                 </li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             {new_pv_chart_html}
             <h4>Power Mode Counts by Date:</h4>
@@ -333,7 +419,7 @@ def email_weekly_report():
     
     # Add power mode counts for each date for New PV Panel
     for date in new_dates:
-        formatted_date = pd.to_datetime(date, format='%d%b%y').strftime('%-d %B %Y')
+        formatted_date = parse_date_flexible(date).strftime('%-d %B %Y')
         new_pv_counts = all_dates_data[date]['new_pv']['PowerMode'].value_counts().to_dict() if len(all_dates_data[date]['new_pv']) > 0 else {}
         html_content += f"            <p><strong>{formatted_date}:</strong> {get_power_mode_text(new_pv_counts)}</p>\n"
     
@@ -350,6 +436,7 @@ def email_weekly_report():
                     </ul>
                 </li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             {zim_c_chart_html}
             <h4>Power Mode Counts by Date:</h4>
@@ -357,7 +444,7 @@ def email_weekly_report():
     
     # Add power mode counts for each date for ZIM C Devices
     for date in new_dates:
-        formatted_date = pd.to_datetime(date, format='%d%b%y').strftime('%-d %B %Y')
+        formatted_date = parse_date_flexible(date).strftime('%-d %B %Y')
         zim_c_counts = all_dates_data[date]['zim_c']['PowerMode'].value_counts().to_dict() if len(all_dates_data[date]['zim_c']) > 0 else {}
         html_content += f"            <p><strong>{formatted_date}:</strong> {get_power_mode_text(zim_c_counts)}</p>\n"
     
@@ -370,6 +457,7 @@ def email_weekly_report():
                 <li><strong>CustomerName = Samskip</strong></li>
                 <li>paired</li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             {samskip_chart_html}
             <h4>Power Mode Counts by Date:</h4>
@@ -377,11 +465,93 @@ def email_weekly_report():
     
     # Add power mode counts for each date for Samskip Devices
     for date in new_dates:
-        formatted_date = pd.to_datetime(date, format='%d%b%y').strftime('%-d %B %Y')
+        formatted_date = parse_date_flexible(date).strftime('%-d %B %Y')
         samskip_counts = all_dates_data[date]['samskip']['PowerMode'].value_counts().to_dict() if len(all_dates_data[date]['samskip']) > 0 else {}
         html_content += f"            <p><strong>{formatted_date}:</strong> {get_power_mode_text(samskip_counts)}</p>\n"
     
-    html_content += """
+    html_content += f"""
+            <br><br>
+            
+            <h3>Section 4: HMM Devices</h3>
+            <p><strong>Devices included in the statistics below:</strong></p>
+            <ul>
+                <li><strong>CustomerName = HMM</strong></li>
+                <li>paired</li>
+                <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
+            </ul>
+            {hmm_chart_html}
+            <h4>Power Mode Counts by Date:</h4>
+    """
+    
+    # Add power mode counts for each date for HMM Devices
+    for date in new_dates:
+        formatted_date = parse_date_flexible(date).strftime('%-d %B %Y')
+        hmm_counts = all_dates_data[date]['hmm']['PowerMode'].value_counts().to_dict() if len(all_dates_data[date]['hmm']) > 0 else {}
+        html_content += f"            <p><strong>{formatted_date}:</strong> {get_power_mode_text(hmm_counts)}</p>\n"
+    
+    # Get fleet-wide power mode statistics (all active devices, no org filter)
+    print("📊 Querying fleet-wide power mode statistics...")
+    try:
+        fleet_stats_df, stats_query_time = get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None)
+        print(f"✅ Fleet statistics query completed in {int(stats_query_time)} seconds")
+        
+        if len(fleet_stats_df) > 0 and fleet_stats_df['TotalYears'].iloc[0] > 0:
+            # Ensure charts directory exists
+            charts_dir = "latest_batt_reports/charts"
+            os.makedirs(charts_dir, exist_ok=True)
+            
+            # Generate combined chart for fleet-wide stats
+            fleet_chart_path = f"{charts_dir}/fleet_power_stats_{latest_date}.png"
+            plot_power_stats_combined(fleet_stats_df, list_name="Fleet-Wide (All Active Devices)", path_save=fleet_chart_path)
+            print(f"📊 Fleet statistics chart saved: {fleet_chart_path}")
+            
+            # Attach fleet chart image
+            if os.path.exists(fleet_chart_path):
+                with open(fleet_chart_path, 'rb') as f:
+                    img_data = f.read()
+                img_part = MIMEImage(img_data)
+                img_part.add_header('Content-ID', '<fleet_stats_chart>')
+                email.attach(img_part)
+                # Display image smaller in email (600px width, maintain aspect ratio)
+                fleet_chart_html = '<img src="cid:fleet_stats_chart" style="display:block; max-width:600px; width:100%; height:auto;"><br>'
+            else:
+                fleet_chart_html = ''
+            
+            # Add fleet statistics section to HTML
+            total_years = fleet_stats_df['TotalYears'].iloc[0]
+            high_pct = fleet_stats_df['HighPercent'].iloc[0]
+            medium_pct = fleet_stats_df['MediumPercent'].iloc[0]
+            low_pct = fleet_stats_df['LowPercent'].iloc[0]
+            critical_pct = fleet_stats_df['CriticalPercent'].iloc[0]
+            
+            html_content += f"""
+            <br><br>
+            <hr style="border: 2px solid #333; margin: 30px 0;">
+            <br>
+            
+            <h2>Fleet-Wide Power Mode Statistics</h2>
+            <p><strong>All Active Devices (All Organizations)</strong></p>
+            <ul>
+                <li>Includes all active devices across all organizations</li>
+                <li>Statistics calculated from historical battery data</li>
+                <li>Shows percentage of operational time spent in each power mode</li>
+            </ul>
+            {fleet_chart_html}
+        </body>
+    </html>
+    """
+        else:
+            print("⚠️ No fleet statistics data available (TotalYears = 0)")
+            html_content += """
+        </body>
+    </html>
+    """
+    except Exception as e:
+        print(f"⚠️ Warning: Could not generate fleet statistics: {e}")
+        import traceback
+        traceback.print_exc()
+        html_content += """
         </body>
     </html>
     """
@@ -394,8 +564,14 @@ def email_weekly_report():
         server.login(EMAIL_CONFIG['sender'], EMAIL_CONFIG['password'])
         server.send_message(email)
     
-    # Update log of emailed dates
-    update_emailed_dates(new_dates)
+    # Update log of emailed dates (only if more than 1 recipient)
+    num_recipients = len(EMAIL_CONFIG['recipients'])
+    if num_recipients > 1:
+        update_emailed_dates(new_dates)
+        print(f"📝 Updated emailed_dates.txt (multiple recipients: {num_recipients})")
+    else:
+        print(f"📝 Skipped emailed_dates.txt update (single recipient: {num_recipients})")
+    
     print(f"✅ Weekly email sent successfully")
     print(f"📊 Reports included: {', '.join(new_dates)}")
     print(f"📈 Total reports: {len(new_dates)}")
@@ -403,7 +579,13 @@ def email_weekly_report():
 
 if __name__ == "__main__":
     try:
-        email_weekly_report()
+        # Check for --use-tracking flag to use old emailed_dates.txt system
+        use_tracking = "--use-tracking" in sys.argv or "--track" in sys.argv
+        
+        if use_tracking:
+            print("⚠️ Using deprecated emailed_dates.txt tracking mode")
+        
+        email_weekly_report(use_emailed_dates_tracking=use_tracking)
     except Exception as e:
         print(f"❌ Fatal error in weekly report: {str(e)}")
         import traceback

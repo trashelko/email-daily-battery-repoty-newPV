@@ -37,6 +37,22 @@ python emailing/daily.py --old
 python emailing/daily.py --help
 ```
 
+## Running Weekly Reports
+
+### Default Mode (Last 7 Days)
+```bash
+python emailing/weekly.py
+```
+Sends an email with reports from the last 7 days (including today). This is the default behavior.
+
+### Using Email Tracking (Deprecated)
+```bash
+python emailing/weekly.py --use-tracking
+```
+Uses the old tracking system based on `emailed_dates.txt` to send only new reports that haven't been emailed yet.
+
+**Note:** The `emailed_dates.txt` file is only updated automatically when there are multiple recipients (>1). For single recipient emails, the file is not updated.
+
 ## Key Notes
 
 Note 2. **credentials_template.py** DOES NOT contain any actual credentials -- this is a dummy-file with the set up of access info to db and to emails. In code (and on my machine) I have **credentials.py** -- this contains the real stuff.
@@ -58,4 +74,5 @@ All files:
   * creates and send the email
 
 * **email_weekly_report.py**
-  * creates and sends an email with all new reports (new reports are from dates not mentioned in **emailed_dates.txt**
+  * creates and sends an email with reports from the last 7 days (default)
+  * Optionally can use `--use-tracking` flag to use old tracking system based on **emailed_dates.txt**

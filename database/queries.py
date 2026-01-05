@@ -1,8 +1,12 @@
 import pandas as pd
 import pyodbc
 import time
+import warnings
 from datetime import datetime
 from .credentials import DB_DebugSMBs_CONFIG, DB_SMBs_CONFIG
+
+# Suppress pandas warning about pyodbc connections (works fine, just not officially tested)
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy.*', category=UserWarning)
 
 def get_db_connection(config=None):
     """
@@ -166,6 +170,144 @@ def get_latest_voltage(specific_date=None):
     query_time = time.time() - start_time
     
     return latest_voltage_df, query_time
+
+def get_active_devices(device_type="hoopoSense Solar"):
+    """
+    Query active devices from AssetsView table.
+    
+    Args:
+        device_type (str): Device type to filter by. Default is "hoopoSense Solar".
+    
+    Returns:
+        tuple: (DataFrame with active devices, query_time_seconds)
+    """
+    conn = get_db_connection(DB_SMBs_CONFIG)
+    
+    query_active_devices = f"""
+    SELECT 
+        [AssetId],
+        [DeviceName] AS DeviceID,
+        [AssetName] AS DeviceName,
+        [OrganizationId],
+        [OrgName],
+        [DeviceType],
+        [DeviceStatus]
+    FROM [dbo].[AssetsView]
+    WHERE DeviceType = '{device_type}'
+        AND DeviceStatus = 'Active'
+    ORDER BY [OrgName], [DeviceName]
+    """
+    
+    start_time = time.time()
+    active_devices_df = pd.read_sql(query_active_devices, conn)
+    conn.close()
+    query_time = time.time() - start_time
+    
+    return active_devices_df, query_time
+
+def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None, device_type="hoopoSense Solar"):
+    """
+    Get power mode statistics (total years and percentages) for devices.
+    
+    Args:
+        organization_id (int, optional): Filter by OrganizationId. If None, includes all active devices.
+        exclude_asset_group_id (int, optional): Exclude devices from this AssetGroupId. If None, no exclusion.
+        device_type (str): Device type to filter by. Default is "hoopoSense Solar".
+    
+    Returns:
+        tuple: (DataFrame with statistics, query_time_seconds)
+    """
+    conn = get_db_connection(DB_SMBs_CONFIG)
+    
+    # Build organization filter
+    org_filter = ""
+    if organization_id is not None:
+        org_filter = f"AND BI.OrganizationId = {organization_id}"
+    
+    # Build asset group exclusion filter
+    asset_group_filter = ""
+    if exclude_asset_group_id is not None:
+        asset_group_filter = f"""
+        AND BI.AssetId IN (
+            SELECT ID FROM [dbo].[Assets] 
+            WHERE OrganizationId = {organization_id if organization_id is not None else 'BI.OrganizationId'} 
+            AND AssetGroupId != {exclude_asset_group_id}
+        )
+        """
+    
+    query = f"""
+    WITH PowerModeSegments AS (
+        SELECT 
+            BI.AssetId,
+            BI.EventTime,
+            BI.Voltage,
+            CASE 
+                WHEN BI.Voltage >= 3.3 THEN 'High'
+                WHEN BI.Voltage >= 3.22 THEN 'Medium' 
+                WHEN BI.Voltage >= 3.18 THEN 'Low'
+                ELSE 'Critical'
+            END as PowerMode,
+            LEAD(BI.EventTime) OVER (PARTITION BY BI.AssetId ORDER BY BI.EventTime) as NextTime
+        FROM [dbo].[BatteryInfo] AS BI
+        WHERE 1=1
+        {org_filter}
+        -- FILTER: Active devices only
+        AND BI.AssetId IN (
+            SELECT AssetId FROM dbo.AssetsView 
+            WHERE DeviceStatus = 'Active' AND DeviceType = '{device_type}'
+        )
+        {asset_group_filter}
+    ),
+    DurationCalculation AS (
+        SELECT 
+            AssetId,
+            PowerMode,
+            -- Calculate duration in hours (much smaller numbers)
+            CASE 
+                WHEN NextTime IS NOT NULL 
+                THEN CAST(DATEDIFF(minute, EventTime, NextTime) AS FLOAT) / 60.0
+                ELSE 0 
+            END as DurationHours
+        FROM PowerModeSegments
+        WHERE NextTime IS NOT NULL  -- Exclude last reading per device
+    )
+    SELECT 
+        -- Convert to years at the end
+        CAST(ROUND(SUM(DurationHours) / (365.0 * 24), 0) AS INT) as TotalYears,
+        
+        CASE 
+            WHEN SUM(DurationHours) > 0 
+            THEN ROUND(SUM(CASE WHEN PowerMode = 'High' THEN DurationHours ELSE 0 END) * 100.0 / SUM(DurationHours), 2)
+            ELSE 0.00
+        END as HighPercent,
+        
+        CASE 
+            WHEN SUM(DurationHours) > 0 
+            THEN ROUND(SUM(CASE WHEN PowerMode = 'Medium' THEN DurationHours ELSE 0 END) * 100.0 / SUM(DurationHours), 2)
+            ELSE 0.00 
+        END as MediumPercent,
+        
+        CASE 
+            WHEN SUM(DurationHours) > 0 
+            THEN ROUND(SUM(CASE WHEN PowerMode = 'Low' THEN DurationHours ELSE 0 END) * 100.0 / SUM(DurationHours), 2)
+            ELSE 0.00
+        END as LowPercent,
+        
+        CASE 
+            WHEN SUM(DurationHours) > 0 
+            THEN ROUND(SUM(CASE WHEN PowerMode = 'Critical' THEN DurationHours ELSE 0 END) * 100.0 / SUM(DurationHours), 2)
+            ELSE 0.00
+        END as CriticalPercent
+        
+    FROM DurationCalculation
+    """
+    
+    start_time = time.time()
+    stats_df = pd.read_sql(query, conn)
+    conn.close()
+    query_time = time.time() - start_time
+    
+    return stats_df, query_time
 
 def get_latest_batt_old():
     """

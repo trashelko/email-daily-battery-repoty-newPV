@@ -5,18 +5,19 @@ Data filtering functions for processing of battery data.
 import pandas as pd
 from .parsing import is_6000
 
-def get_LOW_latest_batt(latest_batt):
+def get_LOW_latest_batt(latest_batt, active_device_ids=None):
     """
     Filter DataFrame to get devices with low battery power modes.
     
     Args:
         latest_batt (pandas.DataFrame): Battery data DataFrame
+        active_device_ids (set or list, optional): Set or list of active device IDs to filter by
         
     Returns:
         pandas.DataFrame: Filtered DataFrame with low battery devices
     """
     df = latest_batt
-    new_pv_devices = get_new_pv_panel_devices(latest_batt)
+    new_pv_devices = get_new_pv_panel_devices(latest_batt, active_device_ids)
     IDs_newPV = list(new_pv_devices['DeviceID'])
     
     # Define power mode conditions
@@ -29,13 +30,15 @@ def get_LOW_latest_batt(latest_batt):
     return latest_batt_LOW
 
 
-def get_new_pv_panel_devices(latest_batt):
+def get_new_pv_panel_devices(latest_batt, active_device_ids=None):
     """
     Filter DataFrame for Section 1: New PV Panel devices.
     Includes devices from Mila's list + CustomerName=ZIM with DeviceID starting with 'A0' and 6000+ in remaining numbers.
+    Filters to only include active devices if active_device_ids is provided.
     
     Args:
         latest_batt (pandas.DataFrame): Battery data DataFrame
+        active_device_ids (set or list, optional): Set or list of active device IDs to filter by
         
     Returns:
         pandas.DataFrame: Filtered DataFrame with New PV Panel devices
@@ -59,14 +62,21 @@ def get_new_pv_panel_devices(latest_batt):
     # Apply filters: (Mila list OR ZIM A0 6000+) AND paired AND seen recently
     df_filtered = df[(cond_mila_list | cond_a0_6000) & cond_zim & cond_paired & cond_lastSeen]
     
+    # Filter by active devices if provided
+    if active_device_ids is not None:
+        cond_active = df_filtered['DeviceID'].isin(active_device_ids)
+        df_filtered = df_filtered[cond_active]
+    
     return df_filtered
 
-def get_zim_c_devices(latest_batt):
+def get_zim_c_devices(latest_batt, active_device_ids=None):
     """
     Filter DataFrame for Section 2: ZIM devices starting with 'C'.
+    Filters to only include active devices if active_device_ids is provided.
     
     Args:
         latest_batt (pandas.DataFrame): Battery data DataFrame
+        active_device_ids (set or list, optional): Set or list of active device IDs to filter by
         
     Returns:
         pandas.DataFrame: Filtered DataFrame with ZIM C devices
@@ -83,14 +93,21 @@ def get_zim_c_devices(latest_batt):
     # Apply filters: ZIM AND C devices AND paired AND seen recently
     df_filtered = df[cond_zim & cond_c_devices & cond_paired & cond_lastSeen]
     
+    # Filter by active devices if provided
+    if active_device_ids is not None:
+        cond_active = df_filtered['DeviceID'].isin(active_device_ids)
+        df_filtered = df_filtered[cond_active]
+    
     return df_filtered
 
-def get_samskip_devices(latest_batt):
+def get_samskip_devices(latest_batt, active_device_ids=None):
     """
     Filter DataFrame for Section 3: samskip devices.
+    Filters to only include active devices if active_device_ids is provided.
     
     Args:
         latest_batt (pandas.DataFrame): Battery data DataFrame
+        active_device_ids (set or list, optional): Set or list of active device IDs to filter by
         
     Returns:
         pandas.DataFrame: Filtered DataFrame with samskip devices
@@ -105,5 +122,40 @@ def get_samskip_devices(latest_batt):
     
     # Apply filters: samskip AND paired AND seen recently
     df_filtered = df[cond_samskip & cond_paired & cond_lastSeen]
+    
+    # Filter by active devices if provided
+    if active_device_ids is not None:
+        cond_active = df_filtered['DeviceID'].isin(active_device_ids)
+        df_filtered = df_filtered[cond_active]
+    
+    return df_filtered
+
+def get_hmm_devices(latest_batt, active_device_ids=None):
+    """
+    Filter DataFrame for Section 4: HMM devices.
+    Filters to only include active devices if active_device_ids is provided.
+    
+    Args:
+        latest_batt (pandas.DataFrame): Battery data DataFrame
+        active_device_ids (set or list, optional): Set or list of active device IDs to filter by
+        
+    Returns:
+        pandas.DataFrame: Filtered DataFrame with HMM devices
+    """
+    df = latest_batt
+    df = df.dropna(subset=['DeviceID', 'DeviceName'])
+    
+    # Define filtering conditions
+    cond_hmm = df['CustomerName'].str.lower() == 'hmm'
+    cond_paired = df['DeviceID'] != df['DeviceName']
+    cond_lastSeen = abs(pd.Timestamp.today() - df['EventTimeUTC']) <= pd.Timedelta(weeks=12)
+    
+    # Apply filters: HMM AND paired AND seen recently
+    df_filtered = df[cond_hmm & cond_paired & cond_lastSeen]
+    
+    # Filter by active devices if provided
+    if active_device_ids is not None:
+        cond_active = df_filtered['DeviceID'].isin(active_device_ids)
+        df_filtered = df_filtered[cond_active]
     
     return df_filtered

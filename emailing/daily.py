@@ -7,9 +7,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.credentials import EMAIL_CONFIG
+from database.queries import get_active_devices
 from reports.create_report_on_date import generate_battery_snapshot_report
 from data_processing.file_operations import read_df_with_metadata, get_report_filename
-from data_processing.data_filters import get_new_pv_panel_devices, get_zim_c_devices, get_samskip_devices
+from data_processing.data_filters import get_new_pv_panel_devices, get_zim_c_devices, get_samskip_devices, get_hmm_devices
 from data_processing.visualization import create_snapshot_chart
 from utils import prompt_for_date
 
@@ -100,15 +101,32 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     # Read the generated data
     latest_batt, query_time = read_df_with_metadata(path_csv)
     
-    # Get section data
-    new_pv_devices = get_new_pv_panel_devices(latest_batt)
+    # Query active devices (only for SMBs database, skip for old query)
+    # Query all active devices once, then filter in Python (can't include large lists in SQL)
+    active_device_ids = None
+    if not use_old_query:
+        try:
+            active_devices_df, _ = get_active_devices()
+            # Get set of active device IDs (DeviceID only - filtering done in Python)
+            active_device_ids = set(active_devices_df['DeviceID'].dropna().tolist())
+            print(f"✅ Found {len(active_device_ids)} active devices")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not query active devices: {e}")
+            print("   Continuing without active device filtering")
+            active_device_ids = None
+    
+    # Get section data (filtered by active devices if available)
+    new_pv_devices = get_new_pv_panel_devices(latest_batt, active_device_ids)
     new_pv_counts = new_pv_devices['PowerMode'].value_counts().to_dict() if len(new_pv_devices) > 0 else {}
     
-    zim_c_devices = get_zim_c_devices(latest_batt)
+    zim_c_devices = get_zim_c_devices(latest_batt, active_device_ids)
     zim_c_counts = zim_c_devices['PowerMode'].value_counts().to_dict() if len(zim_c_devices) > 0 else {}
     
-    samskip_devices = get_samskip_devices(latest_batt)
+    samskip_devices = get_samskip_devices(latest_batt, active_device_ids)
     samskip_counts = samskip_devices['PowerMode'].value_counts().to_dict() if len(samskip_devices) > 0 else {}
+    
+    hmm_devices = get_hmm_devices(latest_batt, active_device_ids)
+    hmm_counts = hmm_devices['PowerMode'].value_counts().to_dict() if len(hmm_devices) > 0 else {}
     
     # Create section charts (only if devices exist)
     chart_paths = {}
@@ -149,6 +167,18 @@ def email_daily_report(manual_mode=False, use_old_query=False):
             path_save=f"latest_batt_reports/charts/samskip_devices_{report_date}.png"
         )
     
+    # Section 4: HMM Devices - show all power modes
+    if len(hmm_devices) > 0:
+        hmm_ids = list(hmm_devices['DeviceID'])
+        chart_paths['hmm'] = create_snapshot_chart(
+            latest_batt, 
+            hmm_ids, 
+            report_date, 
+            paired=True,
+            list_name="HMM Devices", 
+            path_save=f"latest_batt_reports/charts/hmm_devices_{report_date}.png"
+        )
+    
     # Prepare data for tables
     # Section 1: New PV Panel - all critical, low, medium
     new_pv_table = new_pv_devices[new_pv_devices['PowerMode'].isin(['Critical', 'Low', 'Medium'])].copy()
@@ -165,10 +195,16 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     samskip_table = samskip_table.drop(['PayloadData', 'index', 'AssetId', 'OrganizationId'], axis=1, errors='ignore')
     samskip_table.sort_values(by='Voltage', inplace=True)
     
+    # Section 4: HMM devices - critical, low, and medium
+    hmm_table = hmm_devices[hmm_devices['PowerMode'].isin(['Critical', 'Low', 'Medium'])].copy()
+    hmm_table = hmm_table.drop(['PayloadData', 'index', 'AssetId', 'OrganizationId'], axis=1, errors='ignore')
+    hmm_table.sort_values(by='Voltage', inplace=True)
+    
     # Get HTML representations with row limits
     new_pv_html, new_pv_has_more, new_pv_total = get_table_html_with_limit(new_pv_table, 30)
     zim_c_html, zim_c_has_more, zim_c_total = get_table_html_with_limit(zim_c_table, 30)
     samskip_html, samskip_has_more, samskip_total = get_table_html_with_limit(samskip_table, 30)
+    hmm_html, hmm_has_more, hmm_total = get_table_html_with_limit(hmm_table, 30)
     
     # Email content
     msg = f"Query took {int(query_time)} seconds"
@@ -198,6 +234,8 @@ def email_daily_report(manual_mode=False, use_old_query=False):
         add_table_attachment(email, zim_c_table, "zim_c_devices", report_date)
     if samskip_has_more:
         add_table_attachment(email, samskip_table, "samskip_devices", report_date)
+    if hmm_has_more:
+        add_table_attachment(email, hmm_table, "hmm_devices", report_date)
     
     # Helper function to get power mode counts
     def get_power_mode_text(counts):
@@ -226,6 +264,7 @@ def email_daily_report(manual_mode=False, use_old_query=False):
                     </ul>
                 </li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             <p><strong>Power Mode Counts:</strong> {get_power_mode_text(new_pv_counts)}</p>
             {'<img src="cid:new_pv_chart" style="display:block;"><br>' if 'new_pv' in chart_paths else ''}
@@ -244,6 +283,7 @@ def email_daily_report(manual_mode=False, use_old_query=False):
                     </ul>
                 </li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             <p><strong>Power Mode Counts:</strong> {get_power_mode_text(zim_c_counts)}</p>
             {'<img src="cid:zim_c_chart" style="display:block;"><br>' if 'zim_c' in chart_paths else ''}
@@ -258,12 +298,28 @@ def email_daily_report(manual_mode=False, use_old_query=False):
                 <li><strong>CustomerName = Samskip</strong></li>
                 <li>paired</li>
                 <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
             </ul>
             <p><strong>Power Mode Counts:</strong> {get_power_mode_text(samskip_counts)}</p>
             {'<img src="cid:samskip_chart" style="display:block;"><br>' if 'samskip' in chart_paths else ''}
             <h4>Critical, Low & Medium Battery Devices ({samskip_total} devices):</h4>
             {f'<p><em>Showing first 30 of {samskip_total} devices. Full data attached as CSV.</em></p>' if samskip_has_more else ''}
             {samskip_html}
+            <br><br>
+            
+            <h3>Section 4: HMM Devices</h3>
+            <p><strong>Devices included in the statistics below:</strong></p>
+            <ul>
+                <li><strong>CustomerName = HMM</strong></li>
+                <li>paired</li>
+                <li>Only include reports from the last 12 weeks</li>
+                {'<li><strong>Device status = Active</strong> (filtered from AssetsView)</li>' if active_device_ids is not None else ''}
+            </ul>
+            <p><strong>Power Mode Counts:</strong> {get_power_mode_text(hmm_counts)}</p>
+            {'<img src="cid:hmm_chart" style="display:block;"><br>' if 'hmm' in chart_paths else ''}
+            <h4>Critical, Low & Medium Battery Devices ({hmm_total} devices):</h4>
+            {f'<p><em>Showing first 30 of {hmm_total} devices. Full data attached as CSV.</em></p>' if hmm_has_more else ''}
+            {hmm_html}
         </body>
     </html>
     """
@@ -283,7 +339,8 @@ def email_daily_report(manual_mode=False, use_old_query=False):
     print(f"   - New PV Panel: {len(new_pv_devices)} devices - {get_power_mode_text(new_pv_counts)}")
     print(f"   - ZIM C-Series Devices: {len(zim_c_devices)} devices - {get_power_mode_text(zim_c_counts)}")
     print(f"   - Samskip Devices: {len(samskip_devices)} devices - {get_power_mode_text(samskip_counts)}")
-    print(f"📊 Charts attached: {len(chart_paths)} out of 3 sections")
+    print(f"   - HMM Devices: {len(hmm_devices)} devices - {get_power_mode_text(hmm_counts)}")
+    print(f"📊 Charts attached: {len(chart_paths)} out of 4 sections")
     
     # Show attachment information
     attachments = []
@@ -293,6 +350,8 @@ def email_daily_report(manual_mode=False, use_old_query=False):
         attachments.append(f"zim_c_devices_{report_date}.csv ({zim_c_total} rows)")
     if samskip_has_more:
         attachments.append(f"samskip_devices_{report_date}.csv ({samskip_total} rows)")
+    if hmm_has_more:
+        attachments.append(f"hmm_devices_{report_date}.csv ({hmm_total} rows)")
     
     if attachments:
         print(f"📎 CSV attachments: {', '.join(attachments)}")
