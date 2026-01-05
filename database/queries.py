@@ -205,12 +205,13 @@ def get_active_devices(device_type="hoopoSense Solar"):
     
     return active_devices_df, query_time
 
-def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None, device_type="hoopoSense Solar"):
+def get_power_mode_statistics(organization_id=None, organization_ids=None, exclude_asset_group_id=None, device_type="hoopoSense Solar"):
     """
     Get power mode statistics (total years and percentages) for devices.
     
     Args:
-        organization_id (int, optional): Filter by OrganizationId. If None, includes all active devices.
+        organization_id (int, optional): Filter by single OrganizationId. If None, includes all active devices.
+        organization_ids (list, optional): Filter by list of OrganizationIds. Takes precedence over organization_id.
         exclude_asset_group_id (int, optional): Exclude devices from this AssetGroupId. If None, no exclusion.
         device_type (str): Device type to filter by. Default is "hoopoSense Solar".
     
@@ -221,8 +222,19 @@ def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None,
     
     # Build organization filter
     org_filter = ""
-    if organization_id is not None:
-        org_filter = f"AND BI.OrganizationId = {organization_id}"
+    assets_view_org_filter = ""
+    if organization_ids is not None and len(organization_ids) > 0:
+        # Use list of organization IDs
+        org_ids_str = ','.join(str(org_id) for org_id in organization_ids)
+        org_filter = f"BI.OrganizationId IN ({org_ids_str})"
+        assets_view_org_filter = f"OrganizationId IN ({org_ids_str})"
+    elif organization_id is not None:
+        # Use single organization ID
+        org_filter = f"BI.OrganizationId = {organization_id}"
+        assets_view_org_filter = f"OrganizationId = {organization_id}"
+    else:
+        # No organization filter - include all
+        assets_view_org_filter = "1=1"
     
     # Build asset group exclusion filter
     asset_group_filter = ""
@@ -234,6 +246,28 @@ def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None,
             AND AssetGroupId != {exclude_asset_group_id}
         )
         """
+    
+    # Build WHERE clause properly
+    if org_filter:
+        where_clause = f"""
+        WHERE 
+            -- 1=1
+            {org_filter}
+            -- FILTER: Active devices only
+            AND BI.AssetId IN (
+                SELECT AssetId FROM dbo.AssetsView 
+                WHERE {assets_view_org_filter} AND DeviceStatus = 'Active' AND DeviceType = '{device_type}'
+            )
+        {asset_group_filter}"""
+    else:
+        where_clause = f"""
+        WHERE 1=1
+            -- FILTER: Active devices only
+            AND BI.AssetId IN (
+                SELECT AssetId FROM dbo.AssetsView 
+                WHERE {assets_view_org_filter} AND DeviceStatus = 'Active' AND DeviceType = '{device_type}'
+            )
+        {asset_group_filter}"""
     
     query = f"""
     WITH PowerModeSegments AS (
@@ -249,14 +283,7 @@ def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None,
             END as PowerMode,
             LEAD(BI.EventTime) OVER (PARTITION BY BI.AssetId ORDER BY BI.EventTime) as NextTime
         FROM [dbo].[BatteryInfo] AS BI
-        WHERE 1=1
-        {org_filter}
-        -- FILTER: Active devices only
-        AND BI.AssetId IN (
-            SELECT AssetId FROM dbo.AssetsView 
-            WHERE DeviceStatus = 'Active' AND DeviceType = '{device_type}'
-        )
-        {asset_group_filter}
+        {where_clause}
     ),
     DurationCalculation AS (
         SELECT 
@@ -308,6 +335,75 @@ def get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None,
     query_time = time.time() - start_time
     
     return stats_df, query_time
+
+def get_organization_names(organization_ids, device_type="hoopoSense Solar"):
+    """
+    Get organization names for a list of organization IDs.
+    
+    Args:
+        organization_ids (list): List of OrganizationIds to get names for.
+        device_type (str): Device type to filter by. Default is "hoopoSense Solar".
+    
+    Returns:
+        tuple: (DataFrame with OrganizationId, OrgName, DevicesCount, query_time_seconds)
+    """
+    conn = get_db_connection(DB_SMBs_CONFIG)
+    
+    if not organization_ids or len(organization_ids) == 0:
+        return pd.DataFrame(), 0.0
+    
+    org_ids_str = ','.join(str(org_id) for org_id in organization_ids)
+    
+    query = f"""
+    SELECT OrganizationId, OrgName, COUNT(*) AS DevicesCount
+    FROM dbo.AssetsView 
+    WHERE OrganizationId IN ({org_ids_str}) 
+        AND DeviceStatus = 'Active' 
+        AND DeviceType = '{device_type}'
+    GROUP BY OrganizationId, OrgName
+    ORDER BY DevicesCount DESC;
+    """
+    
+    start_time = time.time()
+    org_names_df = pd.read_sql(query, conn)
+    conn.close()
+    query_time = time.time() - start_time
+    
+    return org_names_df, query_time
+
+def get_total_device_count(organization_ids, device_type="hoopoSense Solar"):
+    """
+    Get total device count for a list of organization IDs.
+    
+    Args:
+        organization_ids (list): List of OrganizationIds to count devices for.
+        device_type (str): Device type to filter by. Default is "hoopoSense Solar".
+    
+    Returns:
+        tuple: (int device_count, query_time_seconds)
+    """
+    conn = get_db_connection(DB_SMBs_CONFIG)
+    
+    if not organization_ids or len(organization_ids) == 0:
+        return 0, 0.0
+    
+    org_ids_str = ','.join(str(org_id) for org_id in organization_ids)
+    
+    query = f"""
+    SELECT COUNT(*) AS TotalDevices
+    FROM dbo.AssetsView 
+    WHERE OrganizationId IN ({org_ids_str}) 
+        AND DeviceStatus = 'Active' 
+        AND DeviceType = '{device_type}';
+    """
+    
+    start_time = time.time()
+    count_df = pd.read_sql(query, conn)
+    conn.close()
+    query_time = time.time() - start_time
+    
+    device_count = int(count_df['TotalDevices'].iloc[0]) if len(count_df) > 0 else 0
+    return device_count, query_time
 
 def get_latest_batt_old():
     """

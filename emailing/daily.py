@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.credentials import EMAIL_CONFIG
+from emailing.credentials import EMAIL_CONFIG
 from database.queries import get_active_devices
 from reports.create_report_on_date import generate_battery_snapshot_report
 from data_processing.file_operations import read_df_with_metadata, get_report_filename

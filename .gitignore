@@ -2,7 +2,8 @@
 .DS_Store
 
 # Sensitive data
-credentials.py
+database/credentials.py
+emailing/credentials.py
 
 # Python specific
 __pycache__/

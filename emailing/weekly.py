@@ -14,8 +14,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.credentials import EMAIL_CONFIG
-from database.queries import get_active_devices, get_power_mode_statistics
+from emailing.credentials import EMAIL_CONFIG
+from database.queries import get_active_devices, get_power_mode_statistics, get_organization_names, get_total_device_count
 from data_processing.file_operations import read_df_with_metadata, get_report_filename
 from data_processing.data_filters import get_new_pv_panel_devices, get_zim_c_devices, get_samskip_devices, get_hmm_devices
 from data_processing.visualization import create_snapshot_chart, plot_power_stats_combined
@@ -114,7 +114,7 @@ def find_missing_dates(emailed_dates, today_date):
     return missing_dates
 
 
-def email_weekly_report(use_emailed_dates_tracking=False):
+def email_weekly_report(use_emailed_dates_tracking=False, debug_mode=False):
     """
     Send weekly report with reports from the last 7 days.
     Optionally can use emailed_dates.txt tracking (deprecated).
@@ -122,6 +122,7 @@ def email_weekly_report(use_emailed_dates_tracking=False):
     Args:
         use_emailed_dates_tracking (bool): If True, use old tracking system based on emailed_dates.txt.
                                           If False (default), send last 7 days from today.
+        debug_mode (bool): If True, send only to rashel. If False, send to all recipients.
     """
     print("🔄 Starting weekly report process...")
     
@@ -264,11 +265,20 @@ def email_weekly_report(use_emailed_dates_tracking=False):
         print("❌ Aborting weekly email to prevent sending incomplete report.")
         sys.exit(1)
     
+    # Determine recipients based on debug mode
+    if debug_mode:
+        # Debug mode: send only to first recipient (rashel)
+        recipients = [EMAIL_CONFIG['recipients'][0]]
+        print(f"🐛 Debug mode: Sending to {recipients[0]} only")
+    else:
+        # Normal mode: send to all recipients from EMAIL_CONFIG
+        recipients = EMAIL_CONFIG['recipients']
+        print(f"📧 Normal mode: Sending to {len(recipients)} recipients")
+    
     email = MIMEMultipart()
     email['From'] = EMAIL_CONFIG['sender']
-    email['To'] = ', '.join(EMAIL_CONFIG['recipients'])
-    # email['To'] = EMAIL_CONFIG['recipients'][0]
-    email['Subject'] = f"Weekly Battery Report - {len(new_dates)} Reports"
+    email['To'] = ', '.join(recipients)
+    email['Subject'] = f"(NEW) Weekly Battery Report - {len(new_dates)} Reports"
 
     # Helper function to get power mode counts
     def get_power_mode_text(counts):
@@ -490,11 +500,19 @@ def email_weekly_report(use_emailed_dates_tracking=False):
         hmm_counts = all_dates_data[date]['hmm']['PowerMode'].value_counts().to_dict() if len(all_dates_data[date]['hmm']) > 0 else {}
         html_content += f"            <p><strong>{formatted_date}:</strong> {get_power_mode_text(hmm_counts)}</p>\n"
     
-    # Get fleet-wide power mode statistics (all active devices, no org filter)
+    # Get fleet-wide power mode statistics (filtered to specific organization IDs)
     print("📊 Querying fleet-wide power mode statistics...")
     try:
-        fleet_stats_df, stats_query_time = get_power_mode_statistics(organization_id=None, exclude_asset_group_id=None)
+        # Filter to specific organization IDs
+        target_org_ids = [18, 54, 90, 31, 89, 69, 91, 51]
+        
+        fleet_stats_df, stats_query_time = get_power_mode_statistics(organization_ids=target_org_ids, exclude_asset_group_id=None)
         print(f"✅ Fleet statistics query completed in {int(stats_query_time)} seconds")
+        
+        # Get organization names and device count
+        org_names_df, org_names_query_time = get_organization_names(target_org_ids)
+        device_count, device_count_query_time = get_total_device_count(target_org_ids)
+        print(f"✅ Organization info query completed in {int(org_names_query_time + device_count_query_time)} seconds")
         
         if len(fleet_stats_df) > 0 and fleet_stats_df['TotalYears'].iloc[0] > 0:
             # Ensure charts directory exists
@@ -503,7 +521,7 @@ def email_weekly_report(use_emailed_dates_tracking=False):
             
             # Generate combined chart for fleet-wide stats
             fleet_chart_path = f"{charts_dir}/fleet_power_stats_{latest_date}.png"
-            plot_power_stats_combined(fleet_stats_df, list_name="Fleet-Wide (All Active Devices)", path_save=fleet_chart_path)
+            plot_power_stats_combined(fleet_stats_df, list_name="Fleet-Wide (Selected Organizations)", path_save=fleet_chart_path)
             print(f"📊 Fleet statistics chart saved: {fleet_chart_path}")
             
             # Attach fleet chart image
@@ -518,6 +536,15 @@ def email_weekly_report(use_emailed_dates_tracking=False):
             else:
                 fleet_chart_html = ''
             
+            # Build organization names list
+            org_names_list = []
+            if len(org_names_df) > 0:
+                for _, row in org_names_df.iterrows():
+                    org_names_list.append(f"{row['OrgName']} ({row['DevicesCount']} devices)")
+                org_names_html = '<li>' + '</li><li>'.join(org_names_list) + '</li>'
+            else:
+                org_names_html = '<li>No organizations found</li>'
+            
             # Add fleet statistics section to HTML
             total_years = fleet_stats_df['TotalYears'].iloc[0]
             high_pct = fleet_stats_df['HighPercent'].iloc[0]
@@ -531,9 +558,14 @@ def email_weekly_report(use_emailed_dates_tracking=False):
             <br>
             
             <h2>Fleet-Wide Power Mode Statistics</h2>
-            <p><strong>All Active Devices (All Organizations)</strong></p>
+            <p><strong>Selected Organizations</strong></p>
             <ul>
-                <li>Includes all active devices across all organizations</li>
+                <li><strong>Organizations included:</strong>
+                    <ul>
+                        {org_names_html}
+                    </ul>
+                </li>
+                <li><strong>Total number of devices:</strong> {device_count}</li>
                 <li>Statistics calculated from historical battery data</li>
                 <li>Shows percentage of operational time spent in each power mode</li>
             </ul>
@@ -565,7 +597,7 @@ def email_weekly_report(use_emailed_dates_tracking=False):
         server.send_message(email)
     
     # Update log of emailed dates (only if more than 1 recipient)
-    num_recipients = len(EMAIL_CONFIG['recipients'])
+    num_recipients = len(recipients)
     if num_recipients > 1:
         update_emailed_dates(new_dates)
         print(f"📝 Updated emailed_dates.txt (multiple recipients: {num_recipients})")
@@ -582,10 +614,16 @@ if __name__ == "__main__":
         # Check for --use-tracking flag to use old emailed_dates.txt system
         use_tracking = "--use-tracking" in sys.argv or "--track" in sys.argv
         
+        # Check for --debug flag to send only to rashel
+        debug_mode = "--debug" in sys.argv or "-d" in sys.argv
+        
         if use_tracking:
             print("⚠️ Using deprecated emailed_dates.txt tracking mode")
         
-        email_weekly_report(use_emailed_dates_tracking=use_tracking)
+        if debug_mode:
+            print("🐛 Running in debug mode (sending to rashel only)")
+        
+        email_weekly_report(use_emailed_dates_tracking=use_tracking, debug_mode=debug_mode)
     except Exception as e:
         print(f"❌ Fatal error in weekly report: {str(e)}")
         import traceback

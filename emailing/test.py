@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import smtplib
-from database.credentials import EMAIL_CONFIG
+from emailing.credentials import EMAIL_CONFIG
 
 def test_email_connection():
     """
